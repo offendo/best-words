@@ -112,7 +112,7 @@ def _is_word_in_range(word: str, minmax: tuple):
     return 0
 
 
-def get_wiki(index, keyword):
+def get_wiki_path(index: dict, keyword: str):
     """
     Returns the wiki-file which contains `keyword`
 
@@ -132,3 +132,20 @@ def get_wiki(index, keyword):
     for wiki, minmax in index.items():
         if _is_word_in_range(keyword, minmax) == 0:
             return wiki
+
+
+def get_wiki(path: str):
+    """
+    Loads the wiki `jsonl` file from `path`
+
+    Parameters
+    ----------
+    path : str
+        Path to the wiki file
+
+    Returns
+    -------
+    pd.DataFrame
+        Human readable wikipedia article data
+    """
+    return pd.read_json(path, lines=True).drop(0)
