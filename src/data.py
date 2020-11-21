@@ -83,7 +83,7 @@ def index_wiki(path: str):
 
 
 def _is_word_in_range(word: str, minmax: tuple):
-    """ Compares `word` lexically with `minmax[0]` and `index[1]`
+    """ Compares `word` lexically with `minmax[0]` and `minmax[1]`
 
     Parameters
     ---------
