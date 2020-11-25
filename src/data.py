@@ -1,6 +1,9 @@
 import pandas as pd
 import os
-import json
+from multiprocessing import Pool
+from tqdm import tqdm
+
+WIKI_PATH = "../data/wiki-pages"
 
 
 def _clean_evidence(row: list):
@@ -54,7 +57,23 @@ def get_train(path: str):
     return df
 
 
-def index_wiki(path: str):
+def _get_ids(w):
+    """ Gets the ID column from a wiki dataframe
+
+    Parameters
+    ----------
+    w : str, Path
+        Path to the wiki file to parse
+
+    Returns
+    -------
+    tuple :
+        Tuple of `(w, ID column)`
+    """
+    return (w, set(get_wiki(w)["id"]))
+
+
+def index_wiki(path: str = WIKI_PATH):
     """
     Indexes the wikipedia articles to speed up retrieval
 
@@ -65,76 +84,41 @@ def index_wiki(path: str):
     Returns
     -------
     dict
-        Dictionary of `wiki_file : (first_item, last_item)`
+        Dictionary of `wiki_file : {article IDs}`
     """
     index = {}
-    for wiki in os.listdir(path):
-        with open(wiki, "r") as f:
-            # first line is empty for some reason, index 1 is the first row
-            next(f)
-            first = f.readline()
-            for line in f:
-                pass
-            last = line
-            first_json = json.loads(first)["id"]
-            last_json = json.loads(last)["id"]
-        index[wiki] = (first_json, last_json)
+    wiki_files = [os.path.join(path, p) for p in os.listdir(path)]
+    with Pool(8) as pool:
+        index = dict(tqdm(pool.imap(_get_ids, wiki_files), total=len(wiki_files)))
+
     return index
 
 
-def _is_word_in_range(word: str, minmax: tuple):
-    """ Compares `word` lexically with `minmax[0]` and `minmax[1]`
-
-    Parameters
-    ---------
-    word : str
-        Word to query
-    minmax : tuple
-        Tuple containing the first and last word to search between
-
-    Returns
-    -------
-    int
-        0 if `min < word < max`
-        1 if `min < max < word`
-        -1 if `word < min < max`
+def find_article(index: dict, article: str):
     """
-    # make everything lowercase
-    first, last = minmax
-    first, last = first.lower(), last.lower()
-    word = word.lower()
-
-    # compare
-    if word < first:
-        return -1
-    elif word > last:
-        return -1
-    return 0
-
-
-def get_wiki_path(index: dict, keyword: str):
-    """
-    Returns the wiki-file which contains `keyword`
+    Queries the wiki files for an article
 
     Parameters
     ----------
     index : dict
-        Dictionary of `wiki-file : (first_word, last_word)`
+        Dictionary of `wiki-file : {article IDs}`
 
-    keyword : str
-        Word to search for
+    article : str
+        Article ID to search for
 
     Returns
     -------
-    str
-        Path of the wiki file to retrieve
+    pd.Series :
+        Article data
     """
-    for wiki, minmax in index.items():
-        if _is_word_in_range(keyword, minmax) == 0:
-            return wiki
+    for wiki, items in index.items():
+        if article in items:
+            print(article, wiki)
+            w = get_wiki(wiki)
+            return w[w["id"] == article]
 
 
-def get_wiki(path: str):
+def get_wiki(path: str = WIKI_PATH):
     """
     Loads the wiki `jsonl` file from `path`
 
