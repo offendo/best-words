@@ -2,6 +2,7 @@ import pandas as pd
 import os
 from multiprocessing import Pool
 from tqdm import tqdm
+import re
 
 WIKI_PATH = "../data/wiki-pages"
 
@@ -56,6 +57,10 @@ def get_train(path: str):
 
     return df
 
+
+###############################################################################
+#                              Wikipedia Parsing                              #
+###############################################################################
 
 def _get_ids(w):
     """ Gets the ID column from a wiki dataframe
@@ -113,7 +118,6 @@ def find_article(index: dict, article: str):
     """
     for wiki, items in index.items():
         if article in items:
-            print(article, wiki)
             w = get_wiki(wiki)
             return w[w["id"] == article]
 
@@ -133,3 +137,33 @@ def get_wiki(path: str = WIKI_PATH):
         Human readable wikipedia article data
     """
     return pd.read_json(path, lines=True).drop(0)
+
+
+def _clean_article(article: str):
+    """ Cleans a wikipedia article and splits into lines/sentences
+
+    Parameters
+    ----------
+    article : str
+        Article text from the `lines` column of the wikipedia data
+
+    Returns
+    -------
+    list :
+        Cleaned and split article
+    """
+    rrb = re.compile("-RRB-")
+    lrb = re.compile("-LRB-")
+
+    lines = []
+    for i, line in enumerate(article.split('\n')):
+        # replace left/right bracket tokens with the actual brackets
+        line = re.sub(rrb, ")", line)
+        line = re.sub(lrb, "(", line)
+        # replace tabs with spaces
+        line = re.sub(r"\t", " ", line)
+        # delete the number that starts
+        line = re.sub(r"^\d+ ", "", line)
+        lines.append(line)
+
+    return lines
