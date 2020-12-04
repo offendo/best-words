@@ -11,6 +11,7 @@ import torch
 import torch.multiprocessing as mp
 from torch.utils.data import Dataset
 from torch.nn.functional import cosine_similarity
+torch.multiprocessing.set_start_method('spawn', force=True)
 
 WIKI_PATH = "../data/wiki-pages"
 
@@ -236,13 +237,14 @@ class WikiDatabase:
 
 
 class SentenceDataset(Dataset):
-    def __init__(self, data, embedder, wiki_path):
+    def __init__(self, data, embedder, wiki_path, num_procs):
         self.data = data[data["verifiable"]]
         self.embedder = embedder
         self.wiki = WikiDatabase(wiki_path)
         self.wiki.connect()
         self.input_pad_idx = 0
         self.output_pad_idx = 3
+        self.num_procs = num_procs
 
     def __getitem__(self, idx: int):
         """ Returns a claim, label (0, 1, or 2), and list of
@@ -298,15 +300,15 @@ class SentenceDataset(Dataset):
         ###########################
         #   BOTTLENECK IN SPEED   #
         ###########################
-        start = time.time()
+        # start = time.time()
         # embed all the article texts
-        # name2embed = {k: self.embedder.embed(v) for k, v in name2lines.items()}
-        processes = []
-        with mp.Pool(processes=self.num_procs) as pool:
+        name2embed = {k: self.embedder.embed(v) for k, v in name2lines.items()}
+        # with mp.Pool(processes=self.num_procs) as pool:
+        #     embeddings = pool.map(embedder.embed, name2lines.values())
 
-            embeddings = pool.map(self.embedder.embed, name2lines.values())
-        end = time.time()
-        print("Embedding: ", end - start)
+        # name2embed = dict(embeddings)
+        # end = time.time()
+        # print("Embedding: ", end - start)
 
         # Go through each element in the batch and build the input/output
         # tensors and the starting indices for each article
@@ -327,10 +329,10 @@ class SentenceDataset(Dataset):
                 # reindex the lines to start at the new index
                 # occasionally we get a sentence number that's not right
                 reindexed_lines = [num + i for num in lines if num < len(embeddings)]
-                for i in lines:
-                    if i >= len(embeddings):
+                for j in lines:
+                    if j >= len(embeddings):
                         print("Error:")
-                        print(f"Trying to index sentence {i}")
+                        print(f"Trying to index sentence {j}")
                         print("But '{article_name}' has only {len(embeddings)}")
                         print(f"Claim: {claim}")
 
@@ -345,12 +347,19 @@ class SentenceDataset(Dataset):
             X = torch.cat(
                 [stacked_claims, cosine_sims.unsqueeze(1), stacked_targets], dim=-1
             )
-
             # Convert the sentence indices into a list of support/refute class
             # indices. 1 is default since 'not enough info' is mapped to 1
-            y = torch.ones(size=(len(targets),))
-            for n in target_numbers:
-                y[n] = label
+            try:
+                y = torch.ones(size=(len(targets),))
+                for n in target_numbers:
+                    y[n] = label
+            except IndexError as e:
+                print(f'Claim: {claim}')
+                print(f'There are {len(targets)} target sentences total')
+                print(f'The targeted sentences are {target_numbers}')
+                print(f'The articles are {evidence}')
+                print(e)
+                raise Exception
 
             # Add the elements to the prepared batch
             prepared_batch.append((X, starting_indices, y))
