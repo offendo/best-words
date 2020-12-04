@@ -24,13 +24,35 @@ def _clean_evidence(row: list):
     ----------
     row : list
         Default element in the `evidence` column in training data
-
+        A list of sufficient evidence sets
+        [
+            [
+                [<annotation_id>, <evidence_id>, "Oliver_Reed", 0]
+            ],
+            [
+                [<annotation_id>, <evidence_id>, "Oliver_Reed", 3],
+                [<annotation_id>, <evidence_id>, "Gladiator_-LRB-2000_film-RRB-", 0]
+            ]
+        ]
     Returns
     -------
     list
         Cleaned `evidence` item
+         [
+            [
+                ["Oliver_Reed", 0]
+            ],
+            [
+                ["Oliver_Reed", 3],
+                ["Gladiator_-LRB-2000_film-RRB-", 0]
+            ]
+        ]
     """
-    return [i[2:] for j in row for i in j]
+    cleaned = []
+    for st in row:
+        s = [evidence[2:] for evidence in st]
+        cleaned.append(s)
+    return cleaned
 
 
 def _format_evidence(row: list):
