@@ -405,7 +405,7 @@ class SentenceDataset(Dataset):
 
         all_padded = torch.full(
             size=(len(ys), max_n_sents),
-            fill_value=self.input_pad_idx,
+            fill_value=self.output_pad_idx,
             dtype=torch.long,
         )
 
