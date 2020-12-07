@@ -178,15 +178,22 @@ class Trainer:
             ]
             for i in range(len(all_true_labels))
         ]
+
+        fever_score = 0
+        label_accuracy = 0
         for true, pred in zip(true_sequences, pred_sequences):
-            print(f'True: {true}')
-            print(f'Pred: {pred}')
-            print(f'Correct?: {true == pred}')
+            fev, acc = self.fever(true, pred)
+            fever_score += fev
+            label_accuracy += acc
+
 
         # # true/pred sequences
         is_equal = [a == b for a, b in zip(true_sequences, pred_sequences)]
         print(f"Evidence accuracy: {sum(is_equal) / len(is_equal)}")
         print(f"Number correct: {sum(is_equal)} out of {len(is_equal)}")
+        print(f'Fever score: {fever_score / len(is_equal)}')
+        print(f'Number right: {fever_score} out of {len(is_equal)}')
+        print(f'Label accuracy: {label_accuracy / len(is_equal)}')
 
         # print(Counter(non_padding_predictions))
         # print(Counter(non_padding_labels))
@@ -194,6 +201,21 @@ class Trainer:
         # report = classification_report(non_padding_labels, non_padding_predictions,)
         # print(report)
         return loss_history, running_loss_history
+
+    def fever(self, true, pred):
+        # only care about the selected sentences
+        true_sentences = {i for i, label in enumerate(true) if label != 1}
+        pred_sentences = {i for i, label in enumerate(pred) if label != 1}
+        # calculate the label
+        c = Counter(pred)
+        pred_label = 2 if c[2] > c[0] else 0 if c[0] > c[2] else 1
+        c = Counter(true)
+        true_label = 2 if c[2] > c[0] else 0 if c[0] > c[2] else 1
+
+        is_correct = true_label == pred_label
+        has_evidence = true_sentences <= pred_sentences
+
+        return is_correct and has_evidence, is_correct
 
     def fit(self, train_loader, valid_loader, labels, n_epochs=10):
         """ Train the model
