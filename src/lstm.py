@@ -11,7 +11,6 @@ np.random.seed(12345)
 class LSTMClassifier(nn.Module):
     def __init__(
         self,
-        embeddings,
         embedding_dim,
         hidden_dim,
         output_dim,
@@ -67,3 +66,5 @@ class LSTMClassifier(nn.Module):
         logits = self.fc(self.dropout(out))
 
         return logits
+
+
