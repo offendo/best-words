@@ -2,10 +2,12 @@
 
 
 import torch.nn as nn
+from collections import Counter
 from itertools import chain
 from tqdm import tqdm
 from sklearn.metrics import classification_report
 import torch
+
 
 class Trainer:
     """ Class to train models for predicting
@@ -76,7 +78,6 @@ class Trainer:
             if self.log_every_n and i % self.log_every_n == 0:
                 print(f"Loss: {loss}")
                 print(f"Running loss: {running_loss}")
-                print(f"{logits.shape}")
                 # print(f"predictions: {torch.argmax(logits, dim=-1)}")
                 # print(f"y: {y.view(-1)}")
 
@@ -121,31 +122,29 @@ class Trainer:
 
         # don't compute gradient
         with torch.no_grad():
-            for i, batch in enumerate(loader):
+            for i, batch in tqdm(enumerate(loader), total=len(loader)):
 
                 # Split up the batch
-                X, lengths, y = batch
+                X, starting_indices, y = batch
 
                 # Foward
-                logits = self.model(X.to(self.device), lengths)
+                logits = self.model(X.to(self.device))
                 og_shape = logits.shape
-                print(og_shape)
 
-                # Reshape to be (sent len * batch size, output dim)
+                # Reshape to be (n_sents * batch size, output dim)
                 logits = logits.view(-1, logits.shape[-1])
 
                 # Compute loss & add to history
                 loss = self.loss_fn(logits, y.view(-1).to(self.device))
 
                 # no backprop
-                loss_history.append(loss.item())
+                loss_history.append(float(loss))
 
                 running_loss += (loss_history[-1] - running_loss) / (i + 1)
                 running_loss_history.append(running_loss)
 
                 # softmax to normalize probabilities class
                 probs = torch.softmax(logits, dim=-1)
-                print(probs.shape)
 
                 # get the output class from the probs
                 # also, reshape the prediction back to sentences
@@ -158,39 +157,84 @@ class Trainer:
         all_predictions = list(chain.from_iterable(batch_wise_predictions))
 
         print(f"Evaluation loss: {running_loss}")
-        print(all_true_labels)
-        print(all_predictions)
-        # print("Classification report after epoch:")
+        # print(all_true_labels)
+        # print(all_predictions)
+        print("Classification report after epoch:")
 
         # ignore the padding item
-        # pad_index = labels[]
+
+        pad_index = 3
 
         # non_padding_labels = [
-        #     [
-        #         idx2word[label]
-        #         for j, label in enumerate(all_true_labels[i])
-        #         if all_true_labels[i][j] != pad_index
-        #     ]
+        #     labels[label]
         #     for i in range(len(all_true_labels))
+        #     for j, label in enumerate(all_true_labels[i])
+        #     if all_true_labels[i][j] != pad_index
         # ]
         # non_padding_predictions = [
-        #     [
-        #         idx2word[label]
-        #         for j, label in enumerate(all_predictions[i])
-        #         if all_true_labels[i][j] != pad_index
-        #     ]
+        #     labels[label]
         #     for i in range(len(all_true_labels))
+        #     for j, label in enumerate(all_predictions[i])
+        #     if all_true_labels[i][j] != pad_index
         # ]
+        true_sequences = [
+            [
+                label
+                for j, label in enumerate(all_true_labels[i])
+                if all_true_labels[i][j] != pad_index
+            ]
+            for i in range(len(all_true_labels))
+        ]
+        pred_sequences = [
+            [
+                label
+                for j, label in enumerate(all_predictions[i])
+                if all_true_labels[i][j] != pad_index
+            ]
+            for i in range(len(all_true_labels))
+        ]
+        # i = 0
+        # for true, pred, in zip(true_sequences, pred_sequences):
+            # print(f'True: {", ".join(map(str, true))}')
+            # print(f'Pred: {", ".join(map(str, pred))}')
+            # print(f'Same? {true == pred}')
+            # print(f'Count: {i}')
+            # i += (true == pred)
+        # for true, pred in zip(all_true_labels, all_predictions):
+        #     # if it's padding, skip
+        #     if true[0] == pad_index:
+        #         continue
+        #     # get rid of the not-enough-info cases
+        #     true_counts = Counter(true)
+        #     pred_counts = Counter(pred)
+        #     if true_counts[2] >= true_counts[0]:
+        #         true_label = 2
+        #     elif true_counts[0] > true_counts[2]:
+        #         true_label = 0
+        #     else:
+        #         true_label = 1
+        #     if pred_counts[2] >= pred_counts[0]:
+        #         pred_label = 2
+        #     elif pred_counts[0] > pred_counts[2]:
+        #         pred_label = 0
+        #     else:
+        #         pred_label = 1
+        #     print(f'True: {", ".join(list(map(str, true)))}')
+        #     print(f'Pred: {", ".join(list(map(str, pred)))}')
+        #     print()
+        #     is_equal.append(true_label == pred_label)
 
-        # # print(non_padding_predictions)
-        # # print(non_padding_labels)
-        # report = classification_report(
-        #     non_padding_labels,
-        #     non_padding_predictions,
-        #     mode="strict",
-        # )
+        # true/pred sequences
+        is_equal = [a == b for a, b in zip(true_sequences, pred_sequences)]
+        print(f"Overall accuracy: {sum(is_equal) / len(is_equal)}")
+        print(f"Number correct: {sum(is_equal)} out of {len(is_equal)}")
+
+        # print(Counter(non_padding_predictions))
+        # print(Counter(non_padding_labels))
+        # print(list(labels.values()))
+        # report = classification_report(non_padding_labels, non_padding_predictions,)
         # print(report)
-        return loss_history, running_loss_history, report
+        return loss_history, running_loss_history
 
     def fit(self, train_loader, valid_loader, labels, n_epochs=10):
         """ Train the model
@@ -227,7 +271,7 @@ class Trainer:
             # Record the loss from both training and validation
             loss_hist, running_loss_hist = self.train(train_loader)
 
-            valid_loss_hist, valid_running_loss_hist, report = self.evaluate(
+            valid_loss_hist, valid_running_loss_hist = self.evaluate(
                 valid_loader, labels
             )
 

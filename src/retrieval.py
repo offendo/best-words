@@ -7,6 +7,7 @@ pipeline - retrieving documents matching a claim.
 """
 
 from sentence_transformers import SentenceTransformer, util
+import torch.multiprocessing as mp
 import spacy
 import pytextrank
 
