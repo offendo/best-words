@@ -249,13 +249,13 @@ def remove_duplicates(evidence_sets):
         Ex:
         [
             [
-                ["Oliver_Reed", 0]
+                ["Oliver_Reed", 0],
                 ["Oliver_Reed", 10]
             ],
             [
                 ["Oliver_Reed", 3],
                 ["Gladiator_-LRB-2000_film-RRB-", 0]
-            ]
+            ],
             [
                 ["Oliver_Reed", 6],
                 ["Gladiator_-LRB-2000_film-RRB-", 10]
@@ -269,22 +269,12 @@ def remove_duplicates(evidence_sets):
         ]
 
     """
-    # print(f"Before removing duplicates: {evidence_sets}")
-    ind = 0
-    copy_evidence_sets = evidence_sets
-    #print(type(copy_evidence_sets))
-    for evidence_set in copy_evidence_sets:
-        ev_set = frozenset([x[0] for x in evidence_set])  # removes duplicates in the evidence set level
-        copy_evidence_sets[ind] = ev_set
-        ind += 1
-    copy_evidence_sets = set(copy_evidence_sets)  # removes duplicates in the set-of-evidence-sets level
-
-    #  converting sets to lists for iter-ability
-    copy_evidence_sets = list(copy_evidence_sets)
-    copy_evidence_sets = [list(evidence_set) for evidence_set in copy_evidence_sets]
-    # print(f"After removing duplicates: {evidence_sets}")
-
-    return evidence_sets
+    unique_evidence_sets = set()
+    for evidence_set in evidence_sets:
+        evidences = frozenset([evidence[0] for evidence in evidence_set])
+        unique_evidence_sets.add(evidences)
+    print(unique_evidence_sets)
+    return unique_evidence_sets
 
 
 def evaluate_recall(pred_gold_pair):
@@ -313,16 +303,13 @@ def evaluate_recall(pred_gold_pair):
     """
     retrieved_doc_ids, evidence_sets = pred_gold_pair
 
-    highest_recall = float('-inf')
-    evidence_sets = remove_duplicates(evidence_sets)
+    highest_recall = None
+    evidence_sets = remove_duplicates(evidence_sets) # golds
     for e in evidence_sets:
         total = len(e)
-        correct = 0
-        for doc_id in e:
-            if doc_id in retrieved_doc_ids:
-                correct += 1
+        correct = len(e & retrieved_doc_ids)
         recall = correct / total
-        if recall > highest_recall:
+        if highest_recall is None or recall > highest_recall:
             highest_recall = recall
     return highest_recall
 
@@ -332,14 +319,9 @@ def phase_1(df):
     Prints out stats of recall for key-word match filter on train set
     :param df: The train set of claims and gold evidence
     """
-    claim_gold_pairs = []  # list of tuples (claim, evidence_set)
 
-    for index, row in df.iterrows():
-        if row["verifiable"] is False:
-            continue  # Only checking quality of document retrieval on verifiable claims
-        claim = row['claim']
-        gold_evidence = (row['evidence'])
-        claim_gold_pairs.append((claim, gold_evidence))
+    verifiable = df[df['verifiable'] is not False]
+    claim_gold_pairs = list(zip(verifiable['claim'], verifiable['evidence'])) # list of tuples (claim, evidence_set)
     print(f"Looking at a random {len(claim_gold_pairs)} verifiable examples")
 
     #  Filter documents based on keyword/fuzzy matching
