@@ -70,36 +70,35 @@ class DocDB(object):
 def extract_key_words(sent):
     """
     A simple heuristic to remove stop words from a sentence and return relevant tokens or use NER to extract entities.
-    TODO: Not too sure of this, I have a feeling a good stop word list would be sufficient.
     :param sent: The cleaned input string, usually the claim
     :return key_words: List of words in claim that are not stop words, or words that are recognized as entities by Spacy
     """
-#    stopwords = nlp.Defaults.stop_words
-#    key_words = [x.text for x in nlp(sent).ents]
-#    if len(key_words) == 0:
     stop_words = ["the", "a", "an", "this", "that", "these", "those", "my", "your", "his", "her", "its", "our", "their",
                   "few", "little", "much", "lot", "of", "most", "some", "any", "enough", "other", "another", "such",
                   "what", "rather", "quite", "and", "be", "in", "can", "been", "has", "on", "only", "is", "was", "with",
                   "at", "to", "where", "will"]
-
-    key_words = [tok for tok in sent.split() if tok.lower() not in stop_words]
+    clean_sent = clean_text(sent)
+    key_words = [tok for tok in clean_sent.split() if tok not in stop_words]
     return key_words
 
 
 def clean_text(text):
     """
     Basic clean text utility where RRB and LRB tags are replaced with parentheses and underscores are replaced with
-    spaces
+    spaces and text is converted to all lowercase and punctuation is removed.
     :param text:
     :return text: string - Cleaned text
     """
     rrb = re.compile("-RRB-")
     lrb = re.compile("-LRB-")
-    text = re.sub(rrb, ")", text)
-    text = re.sub(lrb, "(", text)
-    text = re.sub("_", " ", text)
-    text = str(text).lower()
-    return text
+    new_text = re.sub(rrb, ")", text)
+    new_text = re.sub(lrb, "(", new_text)
+
+    punct = re.compile(r'[_?!,]')
+    new_text = re.sub(punct, " ", new_text)
+
+    new_text = str(new_text).lower()
+    return new_text
 
 
 def get_cleaned_first_line(db, doc_id):
@@ -126,79 +125,15 @@ def key_word_match_filter(claim_gold_pair):
     with open("../project_data/wiki_doc_skimmed_ids.obj", "rb") as file:
         ids = pickle.load(file)
     docs = []
-    compare_claim = claim.lower()
+    compare_claim = clean_text(claim)
     for doc_id in ids:
         title = doc_id
         # Clean up doc id
         title = clean_text(title)
-        more_text = title + " . " + get_cleaned_first_line(db, doc_id) + " . "
-        similarity = fuzz.partial_ratio(compare_claim, more_text)
-        if similarity > 90:  # Can be tuned to further narrow down, but need to keep recall same
-            docs.append(doc_id)
-    db.close()
-    return docs, gold_evidence
-
-
-def key_word_match_filter_nonpool(claim):
-    """
-    A simple key_word matching program, where we are (for now) looking at claim and doc title (doc id) and doing
-    fuzz partial ratio matching to filter docs.
-
-    :param claim: List of important words to look for in documents
-    gold_evidence: The evidence set from training, just for purposes of keeping order for multiprocessing
-    :return docs: List of doc ids of the documents that matched claims
-    """
-    with open("../project_data/wiki_doc_skimmed_ids.obj", "rb") as file:
-        ids = pickle.load(file)
-    docs = []
-    compare_claim = claim.lower()
-    for doc_id in ids:
-        title = doc_id
-        # Clean up doc id
-        rrb = re.compile("-RRB-")
-        lrb = re.compile("-LRB-")
-        title = re.sub(rrb, ")", title)
-        title = re.sub(lrb, "(", title)
-        title = re.sub("_", " ", title)
-        title = str(title).lower()
+        #more_text = title + "  " + get_cleaned_first_line(db, doc_id) + "  "
         similarity = fuzz.partial_ratio(compare_claim, title)
-        if similarity > 50:  # Can be tuned to further narrow down, but need to keep recall same
+        if similarity > 75:  # Can be tuned to further narrow down, but need to keep recall same
             docs.append(doc_id)
-    return docs
-
-
-def key_word_score_filter(claim_gold_pair):
-    """
-    A simple key_word matching program, where we are (for now) looking at claim and doc title (doc id) and based on key
-    words extracted from claim, see if at least two of those keywords exist in doc title and first line of doc
-
-    :param claim_gold_pair: Tuple that holds (claim, gold_evidence)
-    claim: List of important words to look for in documents
-    gold_evidence: The evidence set from training, just for purposes of keeping order for multiprocessing
-    :return (docs, gold_evidence)
-    docs: List of doc ids of the documents that matched claims
-    gold_evidence: The evidence set from training, just for purposes of keeping order for multiprocessing
-    """
-    claim, gold_evidence = claim_gold_pair
-    db = DocDB("../project_data/wiki_docs_skimmed.db")
-    with open("../project_data/wiki_doc_skimmed_ids.obj", "rb") as file:
-        ids = pickle.load(file)
-    docs = []
-    compare_claim = claim.lower()
-    for doc_id in ids:
-        title = doc_id
-        # Clean up doc id
-        title = clean_text(title)
-        more_text = title + " . " + get_cleaned_first_line(db, doc_id) + " . "
-        key_words_claims = extract_key_words(compare_claim)
-        key_words_doc = extract_key_words(more_text)
-        count = 0
-        for key in key_words_doc:
-            if key in key_words_claims:
-                docs.append(doc_id)
-                break
-        #if count >= len(key_words_claims)/2:  #a heuristic: if at least half of the keywords are found in doc, doc is retrieved
-        #    docs.append(doc_id)
     db.close()
     return docs, gold_evidence
 
@@ -242,7 +177,6 @@ def key_word_experiment(df):
 
 def remove_duplicates(evidence_sets):
     """
-    TODO: Should I put this in the data.py as a utility function so it can be used for evaluation of doc retrieval?
     Removes duplicate documents within each evidence set, and remove duplicate evidence sets for the purposes
     of document retrieval
     :param evidence_sets: List of sets of sufficient veracity label-supporting document ids and line numbers
@@ -273,7 +207,6 @@ def remove_duplicates(evidence_sets):
     for evidence_set in evidence_sets:
         evidences = frozenset([evidence[0] for evidence in evidence_set])
         unique_evidence_sets.add(evidences)
-    print(unique_evidence_sets)
     return unique_evidence_sets
 
 
@@ -307,7 +240,7 @@ def evaluate_recall(pred_gold_pair):
     evidence_sets = remove_duplicates(evidence_sets) # golds
     for e in evidence_sets:
         total = len(e)
-        correct = len(e & retrieved_doc_ids)
+        correct = len(e & set(retrieved_doc_ids))
         recall = correct / total
         if highest_recall is None or recall > highest_recall:
             highest_recall = recall
@@ -320,20 +253,19 @@ def phase_1(df):
     :param df: The train set of claims and gold evidence
     """
 
-    verifiable = df[df['verifiable'] is not False]
+    verifiable = df[df['verifiable'] != False]
     claim_gold_pairs = list(zip(verifiable['claim'], verifiable['evidence'])) # list of tuples (claim, evidence_set)
     print(f"Looking at a random {len(claim_gold_pairs)} verifiable examples")
 
     #  Filter documents based on keyword/fuzzy matching
     pred_gold_pairs = []  # list of tuples (retrieved_docs, gold_evidence_set)
-    av_cores = 2
-    with Pool(av_cores) as pool:
-        pred_gold_pairs = pool.map(key_word_score_filter, claim_gold_pairs)
+    with Pool() as pool:
+        pred_gold_pairs = pool.map(key_word_match_filter, claim_gold_pairs)
     print([len(pair[0]) for pair in pred_gold_pairs])
     print(f'The average length of the documents retrieved = {sum([len(pair[0]) for pair in pred_gold_pairs])/len(pred_gold_pairs)}')
     #  Evaluate retreived document recall
     recall_scores = []
-    with Pool(av_cores) as pool:
+    with Pool() as pool:
         recall_scores = pool.map(evaluate_recall, pred_gold_pairs)
     print(f'Average recall = {sum(recall_scores) / len(recall_scores)}')
 
@@ -358,6 +290,7 @@ def main():
 
     # Phase 1: Filter docs based on key_word matching
     phase_1_evaluate_small_random_samples(df)
+
     #  key_word_experiment(claim_set)
 
     # Phase 2: Sift through retrieved docs using sentence embeddings
