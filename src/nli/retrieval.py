@@ -63,9 +63,9 @@ def extract_keywords(nlp, text: str, special_tokens: list = None):
 class SentEmbed:
     def __init__(self, model='distilbert-base-nli-stsb-mean-tokens'):
         self.model = SentenceTransformer(model)
-        # self.tokenizer = spacy.load('en_core_web_lg')
-        # tr = pytextrank.TextRank()
-        # self.tokenizer.add_pipe(tr.PipelineComponent, name='textrank', last=True)
+        self.tokenizer = spacy.load('en_core_web_lg')
+        tr = pytextrank.TextRank()
+        self.tokenizer.add_pipe(tr.PipelineComponent, name='textrank', last=True)
 
     def compare(self, claim: str, targets: list):
         claim_embedding = self.embed([claim])
