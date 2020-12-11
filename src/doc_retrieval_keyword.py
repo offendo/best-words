@@ -375,6 +375,7 @@ def phase_1_evaluate_small_random_samples(df):
         end = timer()
         print(f"This iteration took {end - start}")
 
+
 def main():
     train_file = os.path.join('../data', 'train.jsonl')
     df = data.get_train(train_file)
