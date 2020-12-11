@@ -9,6 +9,9 @@ import pickle
 from rapidfuzz import fuzz
 from multiprocessing import Pool
 from timeit import default_timer as timer
+from transformers import AutoTokenizer, AutoModel
+from sklearn.metrics.pairwise import cosine_similarity
+import torch
 
 import numpy as np
 
@@ -105,6 +108,7 @@ def get_cleaned_first_line(db, doc_id):
     doc = db.get_doc_text(doc_id)
     sent_delim = re.compile(r'\s+\.\s+')
     first_line = re.split(sent_delim, doc)[0]
+    print(f"The raw first line w/o periods = {first_line}")
     return clean_text(first_line)
 
 
@@ -130,10 +134,11 @@ def partial_ratio_filter_1(claim_gold_pair):
         #  clean up doc id
         title = clean_text(doc_id)
         similarity = fuzz.partial_ratio(compare_claim, title)
-        if similarity > 50:  # tunable parameter, depends on how high recall should be in this stage
+        if similarity > 75:  # tunable parameter, depends on how high recall should be in this stage
             docs.append(doc_id)
     db.close()
-    docs = partial_ratio_filter_2((claim, docs))
+    #docs = partial_ratio_filter_2((claim, docs))
+    docs = sentence_similarity_filter_2((claim, docs))
     return docs, gold_evidence
 
 
@@ -160,6 +165,55 @@ def partial_ratio_filter_2(claim_docs):
         filtered_docs = filtered_docs[:5]
     db.close()
     return filtered_docs
+
+
+def get_cleaned_first_line_similarity(db, doc_id):
+    doc = db.get_doc_text(doc_id)
+    sent_delim = re.compile(r'\s+\.\s+')
+    first_line = re.split(sent_delim, doc)[0]
+    return clean_text_similarity(first_line + ".")
+
+
+def clean_text_similarity(text):
+    """
+    Basic clean text utility where RRB and LRB tags are removed and underscores are replaced with
+    spaces and text is converted to all lowercase and punctuation is removed.
+    :param text:
+    :return text: string - Cleaned text
+    """
+    rrb = re.compile("-RRB-")
+    lrb = re.compile("-LRB-")
+    new_text = re.sub(rrb, ")", text)
+    new_text = re.sub(lrb, "(", new_text)
+
+    return new_text
+
+
+def sentence_similarity_filter_2(claim_docs):
+    start = timer()
+    model = pickle.load(open(os.path.join("../project_data", "LaBSE_model.obj"), "rb"))
+    tokenizer = pickle.load(open(os.path.join("../project_data", "LaBSE_tokenizer.obj"), "rb"))
+    claim, retrieved_docs = claim_docs
+    db = DocDB("../project_data/wiki_docs_skimmed.db")
+    sentences = [clean_text_similarity(claim)]
+    sentences.extend([clean_text_similarity(doc) for doc in retrieved_docs])
+    encoded_input = tokenizer(sentences, padding=True, truncation=True, max_length=64, return_tensors='pt')
+    with torch.no_grad():
+        model_output = model(**encoded_input)
+
+    embeddings = model_output.pooler_output
+    embeddings = torch.nn.functional.normalize(embeddings)
+    docs_similarities = []
+    for i in range(1, len(retrieved_docs)+1):
+        cos_sim = cosine_similarity(embeddings[0].reshape(1, -1), embeddings[i].reshape(1, -1))[0][0]
+        doc = retrieved_docs[i-1]
+        docs_similarities.append((doc, cos_sim))
+
+    ordered_docs = sorted(docs_similarities, key=lambda pair: pair[1], reverse=True)
+    filtered_docs = [pair[0] for pair in ordered_docs]
+    end = timer()
+    print(f"The sentence similarity filter took {end-start}")
+    return filtered_docs[:5]
 
 
 def key_word_match_filter(claim_gold_pair):
@@ -342,14 +396,16 @@ def phase_1(df):
     """
 
     verifiable = df[df['verifiable'] != False]
+
     claim_gold_pairs = list(zip(verifiable['claim'], verifiable['evidence']))  # list of tuples (claim, evidence_set)
     print(f"Looking at a random {len(claim_gold_pairs)} verifiable examples")
 
     #  Filter documents based on keyword/fuzzy matching
     pred_gold_pairs = []  # list of tuples (retrieved_docs, gold_evidence_set)
+
     with Pool() as pool:
         pred_gold_pairs = pool.map(partial_ratio_filter_1, claim_gold_pairs)
-    # print([len(pair[0]) for pair in pred_gold_pairs])
+    print([len(pair[0]) for pair in pred_gold_pairs])
     print(
         f'The average length of the documents retrieved after phase 1 = {sum([len(pair[0]) for pair in pred_gold_pairs]) / len(pred_gold_pairs)}')
     #  Evaluate retreived document recall
@@ -380,8 +436,9 @@ def main():
     train_file = os.path.join('../data', 'train.jsonl')
     df = data.get_train(train_file)
     #phase_1_evaluate_small_random_samples(df)
-    #train_set, _ = train_test_split(df, train_size=100, random_state=seed)  # need to look into NEI ratios and balance
-    #partial_ratio_experiment(train_set)
+    train_set, _ = train_test_split(df, train_size=10,
+                                    random_state=seed)  # need to look into NEI ratios and balance
+    phase_1(train_set)
 
     #start = timer()
     #end = timer()
