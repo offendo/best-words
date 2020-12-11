@@ -7,6 +7,7 @@ from itertools import chain
 from tqdm import tqdm
 from sklearn.metrics import classification_report
 import torch
+from fever import scorer
 
 
 class Trainer:
@@ -47,13 +48,14 @@ class Trainer:
         running_loss = 0.0
         running_loss_history = []
 
-        for i, batch in tqdm(enumerate(loader), total=len(loader)):
+        progress = tqdm(enumerate(loader), total=len(loader))
+        for i, batch in progress:
 
             # Zero out the gradient
             self.optimizer.zero_grad()
 
             # Split up the batch
-            X, starting_indices, y = batch
+            X, starting_indices, y, labels = batch
 
             # X : shape [batch_size, num sentences, input dim]
             # y : shape [batch_size, num sentences, output dim]
@@ -62,7 +64,6 @@ class Trainer:
             logits = self.model(X.to(self.device))
 
             # logits : shape [batch_size, num_sentences, output dim]
-
             # Reshape to (num sentences * batch size, output dim)
             logits = logits.view(-1, logits.shape[-1])
 
@@ -71,15 +72,14 @@ class Trainer:
             loss_history.append(loss.item())
 
             # Compute a rolling average loss & add to history
-            running_loss += (loss_history[-1] - running_loss) / (i + 1)
+            running_loss = sum(loss_history[-5:]) / 5
             running_loss_history.append(running_loss)
 
             # Log the running loss
             if self.log_every_n and i % self.log_every_n == 0:
-                print(f"Loss: {loss}")
-                print(f"Running loss: {running_loss}")
-                # print(f"predictions: {torch.argmax(logits, dim=-1)}")
-                # print(f"y: {y.view(-1)}")
+                progress.set_description(f"Loss: {loss}\tRunning loss: {running_loss}")
+                # print(f"predictions: {torch.argmax(logits, dim=-1).tolist()}")
+                # print(f"y: {y.view(-1).tolist()}")
 
             # Backpropogation
             loss.backward()
@@ -89,13 +89,14 @@ class Trainer:
 
             # update step
             self.optimizer.step()
+            progress.update(1)
 
         print("Epoch completed!")
         print(f"Epoch Loss: {running_loss}")
 
         return loss_history, running_loss_history
 
-    def evaluate(self, loader, labels):
+    def evaluate(self, loader, batch_labels):
         """ Evaluate model on validation data
 
         Parameters
@@ -123,22 +124,21 @@ class Trainer:
         # don't compute gradient
         with torch.no_grad():
             for i, batch in tqdm(enumerate(loader), total=len(loader)):
-
                 # Split up the batch
-                X, starting_indices, y = batch
+                X, indices, y, _ = batch
 
                 # Foward
                 logits = self.model(X.to(self.device))
                 og_shape = logits.shape
 
-                # Reshape to be (n_sents * batch size, output dim)
+                # Reshape to be (sent len * batch size, output dim)
                 logits = logits.view(-1, logits.shape[-1])
 
                 # Compute loss & add to history
                 loss = self.loss_fn(logits, y.view(-1).to(self.device))
 
                 # no backprop
-                loss_history.append(float(loss))
+                loss_history.append(loss.item())
 
                 running_loss += (loss_history[-1] - running_loss) / (i + 1)
                 running_loss_history.append(running_loss)
@@ -157,26 +157,11 @@ class Trainer:
         all_predictions = list(chain.from_iterable(batch_wise_predictions))
 
         print(f"Evaluation loss: {running_loss}")
-        # print(all_true_labels)
-        # print(all_predictions)
         print("Classification report after epoch:")
 
         # ignore the padding item
-
         pad_index = 3
 
-        # non_padding_labels = [
-        #     labels[label]
-        #     for i in range(len(all_true_labels))
-        #     for j, label in enumerate(all_true_labels[i])
-        #     if all_true_labels[i][j] != pad_index
-        # ]
-        # non_padding_predictions = [
-        #     labels[label]
-        #     for i in range(len(all_true_labels))
-        #     for j, label in enumerate(all_predictions[i])
-        #     if all_true_labels[i][j] != pad_index
-        # ]
         true_sequences = [
             [
                 label
@@ -193,41 +178,22 @@ class Trainer:
             ]
             for i in range(len(all_true_labels))
         ]
-        # i = 0
-        # for true, pred, in zip(true_sequences, pred_sequences):
-            # print(f'True: {", ".join(map(str, true))}')
-            # print(f'Pred: {", ".join(map(str, pred))}')
-            # print(f'Same? {true == pred}')
-            # print(f'Count: {i}')
-            # i += (true == pred)
-        # for true, pred in zip(all_true_labels, all_predictions):
-        #     # if it's padding, skip
-        #     if true[0] == pad_index:
-        #         continue
-        #     # get rid of the not-enough-info cases
-        #     true_counts = Counter(true)
-        #     pred_counts = Counter(pred)
-        #     if true_counts[2] >= true_counts[0]:
-        #         true_label = 2
-        #     elif true_counts[0] > true_counts[2]:
-        #         true_label = 0
-        #     else:
-        #         true_label = 1
-        #     if pred_counts[2] >= pred_counts[0]:
-        #         pred_label = 2
-        #     elif pred_counts[0] > pred_counts[2]:
-        #         pred_label = 0
-        #     else:
-        #         pred_label = 1
-        #     print(f'True: {", ".join(list(map(str, true)))}')
-        #     print(f'Pred: {", ".join(list(map(str, pred)))}')
-        #     print()
-        #     is_equal.append(true_label == pred_label)
 
-        # true/pred sequences
+        fever_score = 0
+        label_accuracy = 0
+        for true, pred in zip(true_sequences, pred_sequences):
+            fev, acc = self.fever(true, pred)
+            fever_score += fev
+            label_accuracy += acc
+
+
+        # # true/pred sequences
         is_equal = [a == b for a, b in zip(true_sequences, pred_sequences)]
-        print(f"Overall accuracy: {sum(is_equal) / len(is_equal)}")
+        print(f"Evidence accuracy: {sum(is_equal) / len(is_equal)}")
         print(f"Number correct: {sum(is_equal)} out of {len(is_equal)}")
+        print(f'Fever score: {fever_score / len(is_equal)}')
+        print(f'Number right: {fever_score} out of {len(is_equal)}')
+        print(f'Label accuracy: {label_accuracy / len(is_equal)}')
 
         # print(Counter(non_padding_predictions))
         # print(Counter(non_padding_labels))
@@ -235,6 +201,21 @@ class Trainer:
         # report = classification_report(non_padding_labels, non_padding_predictions,)
         # print(report)
         return loss_history, running_loss_history
+
+    def fever(self, true, pred):
+        # only care about the selected sentences
+        true_sentences = {i for i, label in enumerate(true) if label != 1}
+        pred_sentences = {i for i, label in enumerate(pred) if label != 1}
+        # calculate the label
+        c = Counter(pred)
+        pred_label = 2 if c[2] > c[0] else 0 if c[0] > c[2] else 1
+        c = Counter(true)
+        true_label = 2 if c[2] > c[0] else 0 if c[0] > c[2] else 1
+
+        is_correct = true_label == pred_label
+        has_evidence = true_sentences <= pred_sentences
+
+        return is_correct and has_evidence, is_correct
 
     def fit(self, train_loader, valid_loader, labels, n_epochs=10):
         """ Train the model

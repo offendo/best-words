@@ -129,3 +129,4 @@ dmypy.json
 .pyre/
 /.projectile
 data/
+/report/.auctex-auto/
