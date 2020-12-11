@@ -8,11 +8,11 @@ import unicodedata
 import pickle
 from rapidfuzz import fuzz
 from multiprocessing import Pool
+from timeit import default_timer as timer
 
 import numpy as np
-seed = np.random.seed(2)
 
-from tqdm import tqdm
+seed = np.random.seed(2)
 
 
 class DocDB(object):
@@ -67,6 +67,25 @@ class DocDB(object):
         return result if result is None else result[0]
 
 
+def clean_text(text):
+    """
+    Basic clean text utility where RRB and LRB tags are removed and underscores are replaced with
+    spaces and text is converted to all lowercase and punctuation is removed.
+    :param text:
+    :return text: string - Cleaned text
+    """
+    rrb = re.compile("-RRB-")
+    lrb = re.compile("-LRB-")
+    new_text = re.sub(rrb, " ", text)
+    new_text = re.sub(lrb, " ", new_text)
+
+    punct = re.compile(r'[_?!.,]')
+    new_text = re.sub(punct, " ", new_text)
+
+    new_text = str(new_text).lower()
+    return new_text
+
+
 def extract_key_words(sent):
     """
     A simple heuristic to remove stop words from a sentence and return relevant tokens or use NER to extract entities.
@@ -82,25 +101,6 @@ def extract_key_words(sent):
     return key_words
 
 
-def clean_text(text):
-    """
-    Basic clean text utility where RRB and LRB tags are replaced with parentheses and underscores are replaced with
-    spaces and text is converted to all lowercase and punctuation is removed.
-    :param text:
-    :return text: string - Cleaned text
-    """
-    rrb = re.compile("-RRB-")
-    lrb = re.compile("-LRB-")
-    new_text = re.sub(rrb, ")", text)
-    new_text = re.sub(lrb, "(", new_text)
-
-    punct = re.compile(r'[_?!,]')
-    new_text = re.sub(punct, " ", new_text)
-
-    new_text = str(new_text).lower()
-    return new_text
-
-
 def get_cleaned_first_line(db, doc_id):
     doc = db.get_doc_text(doc_id)
     sent_delim = re.compile(r'\s+\.\s+')
@@ -108,10 +108,10 @@ def get_cleaned_first_line(db, doc_id):
     return clean_text(first_line)
 
 
-def key_word_match_filter(claim_gold_pair):
+def partial_ratio_filter_1(claim_gold_pair):
     """
     A simple key_word matching program, where we are (for now) looking at claim and doc title (doc id) and doing
-    fuzz partial ratio matching to filter docs.
+    fuzz partial ratio matching to filter docs, and returning docs with partial ratio of greater than 50.
 
     :param claim_gold_pair: Tuple that holds (claim, gold_evidence)
     claim: List of important words to look for in documents
@@ -127,51 +127,139 @@ def key_word_match_filter(claim_gold_pair):
     docs = []
     compare_claim = clean_text(claim)
     for doc_id in ids:
-        title = doc_id
-        # Clean up doc id
-        title = clean_text(title)
-        #more_text = title + "  " + get_cleaned_first_line(db, doc_id) + "  "
+        #  clean up doc id
+        title = clean_text(doc_id)
         similarity = fuzz.partial_ratio(compare_claim, title)
-        if similarity > 75:  # Can be tuned to further narrow down, but need to keep recall same
+        if similarity > 50:  # tunable parameter, depends on how high recall should be in this stage
+            docs.append(doc_id)
+    db.close()
+    docs = partial_ratio_filter_2((claim, docs))
+    return docs, gold_evidence
+
+
+def partial_ratio_filter_2(claim_docs):
+    """
+    A simple key_word matching program, where we are (for now) looking at claim and doc title (doc id) and doing
+    fuzz partial ratio matching to filter docs, but this will take the top 10 docs with the highest partial ratios.
+    This is a heuristic that comes from how some claims have their keywords spread out and have low partial ratios
+    with their gold evidence docs.
+
+    :param claim_docs: Tuple that holds (claim, docs)
+    claim: List of important words to look for in documents
+    docs: List of doc ids that were retrieved after the first filter
+    :return filtered_docs: List of doc ids of the documents that had the top 5 partial ratios
+    """
+    claim, retrieved_docs = claim_docs
+    db = DocDB("../project_data/wiki_docs_skimmed.db")
+    compare_claim = clean_text(claim)
+    partial_ratios = [(doc_id, fuzz.partial_ratio(compare_claim, clean_text(doc_id))) for doc_id in retrieved_docs]
+    ordered_partial_ratios = sorted(partial_ratios, key=lambda pair: pair[1], reverse=True)
+    #print(f"claim = {claim} with highest partial ratios {ordered_partial_ratios[:5]}")
+    filtered_docs = [pair[0] for pair in ordered_partial_ratios]
+    if len(ordered_partial_ratios) > 5:
+        filtered_docs = filtered_docs[:5]
+    db.close()
+    return filtered_docs
+
+
+def key_word_match_filter(claim_gold_pair):
+    """
+    A simple key_word matching program, where we are (for now) looking at claim and doc title (doc id) and returning docs
+    that have at least one keyword in common with the claim's keywords.
+
+    :param claim_gold_pair: Tuple that holds (claim, gold_evidence)
+    claim: List of important words to look for in documents
+    gold_evidence: The evidence set from training, just for purposes of keeping order for multiprocessing
+    :return (docs, gold_evidence)
+    docs: List of doc ids of the documents that matched claims
+    gold_evidence: The evidence set from training, just for purposes of keeping order for multiprocessing
+    """
+    claim, gold_evidence = claim_gold_pair
+    db = DocDB("../project_data/wiki_docs_skimmed.db")
+    with open("../project_data/wiki_doc_skimmed_ids.obj", "rb") as file:
+        ids = pickle.load(file)
+    docs = []
+    keywords_claim = extract_key_words(claim)
+    for doc_id in ids:
+        title = doc_id
+        keywords_doc = extract_key_words(title)
+        first_line = get_cleaned_first_line(db, doc_id)
+        keywords_doc.extend(extract_key_words(first_line))
+        if len(set(keywords_claim) & set(keywords_doc)) > 0:  # at least one match, this will prob. return a lot of docs
             docs.append(doc_id)
     db.close()
     return docs, gold_evidence
 
 
-def key_word_experiment(df):
+def partial_ratio_experiment(df):
     """
     An experiment to check the train data to see if it is sufficient to look for key words (from the claim) in the doc id
-    instead of the text of the doc.
-    Run fuzz.partial_ratio on claim and doc id
-        if ratio is less than 50,
-            print the doc id and the sentence number that holds the evidence
-                this is to check how much of doc we might need to look at to extract key words in addition to doc id
-    TODO: Look at a larger portion of random docs to see how many lines to include
+    instead of the text of the doc, and also to see the range of partial ratios to determine the partial ratio
+    threshold we should use for partial ratio filtering when retrieving document (see partial_ratio_filter_1 and 2)
+
     :return:
     """
     db = DocDB("../project_data/wiki_docs_skimmed.db")
-    for i, row in df.iterrows():
-        if row["verifiable"] is False:  # Note: "label" field is unreliable
-            continue
-        claim = row["claim"].lower()
+    verifiable = df[df['verifiable'] != False]
+    for i, row in verifiable.iterrows():
+        claim = row["claim"]
         evidence_set = row["evidence"]
         titles = []
+        print(f"**** Claim: {claim} ****")
         for st in evidence_set:
             st_titles = []
             for doc in st:
                 st_titles.append((doc[0], doc[1]))
-            # print(f"One sufficent evidence set for claim:{claim}:")
+            print(f"Partial ratios for one complete evidence set:")
             for title, line_num in st_titles:
                 id = title
                 title = clean_text(title)
                 first_line = get_cleaned_first_line(db, id)
-                more_text = title + " . " + first_line + " . "
+                #more_text = title + " . " + first_line + " . "
                 ratio = fuzz.partial_ratio(claim, title)
-                #print(ratio)
-                #print(f"\n***Claim: {claim}***\ndoc_id: {title}\npartial_ratio: {ratio}\n")
-                if ratio < 50:
-                    print(
-                        f"\n***Claim: {claim}***\ndoc_id: {title}\npartial_ratio: {ratio}\n text {more_text}")
+                print(ratio, "The first line: ", first_line)
+    db.close()
+
+
+def key_word_experiment(df):
+    """
+    An experiment to check the train data, specifically the keyword similarity between the claim and the first
+    line of the doc in the gold set of evidence docs.
+    Prints out if at least one evidence set exists where all its docs (title concatenated with first line)
+    have at least one keyword in common with the claim. Results show that only 3 % of randomly sampled claims
+    don't have this property, making it a safe-ish bet to use keyword extraction.
+    :return:
+    """
+    db = DocDB("../project_data/wiki_docs_skimmed.db")
+    verifiable = df[df['verifiable'] != False]
+    for i, row in verifiable.iterrows():
+        claim = row["claim"]
+        evidence_set = row["evidence"]
+        titles = []
+        # print(f"**** Claim: {claim} ****")
+        count_no_match = 0
+        for st in evidence_set:
+            # print("One evidence set")
+            st_titles = []
+            for doc in st:
+                st_titles.append((doc[0], doc[1]))
+            valid_evidence_set = True  # this is to see if using keyword comparison would be able to retrieve this evidence set
+            for title, line_num in st_titles:
+                id = title
+                keywords_claim = extract_key_words(claim)
+                keywords_doc = extract_key_words(title)
+                first_line = get_cleaned_first_line(db, id)
+                keywords_doc.extend(extract_key_words(first_line))
+                matches = len(set(keywords_claim) & set(keywords_doc))
+                # print(matches)
+                if matches == 0:
+                    valid_evidence_set = False
+            if valid_evidence_set is False:
+                count_no_match += 1
+        if count_no_match == len(evidence_set):
+            print(
+                f"The correct documents for this claim ({claim}) would not be able to be returned with our keyword approach")
+
     db.close()
 
 
@@ -237,7 +325,7 @@ def evaluate_recall(pred_gold_pair):
     retrieved_doc_ids, evidence_sets = pred_gold_pair
 
     highest_recall = None
-    evidence_sets = remove_duplicates(evidence_sets) # golds
+    evidence_sets = remove_duplicates(evidence_sets)  # golds
     for e in evidence_sets:
         total = len(e)
         correct = len(e & set(retrieved_doc_ids))
@@ -254,15 +342,16 @@ def phase_1(df):
     """
 
     verifiable = df[df['verifiable'] != False]
-    claim_gold_pairs = list(zip(verifiable['claim'], verifiable['evidence'])) # list of tuples (claim, evidence_set)
+    claim_gold_pairs = list(zip(verifiable['claim'], verifiable['evidence']))  # list of tuples (claim, evidence_set)
     print(f"Looking at a random {len(claim_gold_pairs)} verifiable examples")
 
     #  Filter documents based on keyword/fuzzy matching
     pred_gold_pairs = []  # list of tuples (retrieved_docs, gold_evidence_set)
     with Pool() as pool:
-        pred_gold_pairs = pool.map(key_word_match_filter, claim_gold_pairs)
-    print([len(pair[0]) for pair in pred_gold_pairs])
-    print(f'The average length of the documents retrieved = {sum([len(pair[0]) for pair in pred_gold_pairs])/len(pred_gold_pairs)}')
+        pred_gold_pairs = pool.map(partial_ratio_filter_1, claim_gold_pairs)
+    # print([len(pair[0]) for pair in pred_gold_pairs])
+    print(
+        f'The average length of the documents retrieved after phase 1 = {sum([len(pair[0]) for pair in pred_gold_pairs]) / len(pred_gold_pairs)}')
     #  Evaluate retreived document recall
     recall_scores = []
     with Pool() as pool:
@@ -279,21 +368,23 @@ def phase_1_evaluate_small_random_samples(df):
     print("Random seed 2")
     for i in range(10):
         print(f"***Iteration {i}***")
-        print(f"Average recall:")
-        train_set, _ = train_test_split(df, train_size=100, random_state=seed) # need to look into NEI ratios and balance
+        train_set, _ = train_test_split(df, train_size=100,
+                                        random_state=seed)  # need to look into NEI ratios and balance
+        start = timer()
         phase_1(train_set)
-
+        end = timer()
+        print(f"This iteration took {end - start}")
 
 def main():
     train_file = os.path.join('../data', 'train.jsonl')
     df = data.get_train(train_file)
+    #phase_1_evaluate_small_random_samples(df)
+    #train_set, _ = train_test_split(df, train_size=100, random_state=seed)  # need to look into NEI ratios and balance
+    #partial_ratio_experiment(train_set)
 
-    # Phase 1: Filter docs based on key_word matching
-    phase_1_evaluate_small_random_samples(df)
-
-    #  key_word_experiment(claim_set)
-
-    # Phase 2: Sift through retrieved docs using sentence embeddings
+    #start = timer()
+    #end = timer()
+    #print(f"That took {end - start}")
 
 
 if __name__ == '__main__':
