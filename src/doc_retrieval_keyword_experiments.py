@@ -125,8 +125,7 @@ def partial_ratio_filter_1(claim_gold_pair):
     gold_evidence: The evidence set from training, just for purposes of keeping order for multiprocessing
     """
     claim, gold_evidence = claim_gold_pair
-    db = DocDB("../project_data/wiki_docs_skimmed.db")
-    with open("../project_data/wiki_doc_skimmed_ids.obj", "rb") as file:
+    with open("../data/wiki_doc_skimmed_ids.obj", "rb") as file:
         ids = pickle.load(file)
     docs = []
     compare_claim = clean_text(claim)
@@ -136,7 +135,6 @@ def partial_ratio_filter_1(claim_gold_pair):
         similarity = fuzz.partial_ratio(compare_claim, title)
         if similarity > 75:  # tunable parameter, depends on how high recall should be in this stage
             docs.append(doc_id)
-    db.close()
     #docs = partial_ratio_filter_2((claim, docs))
     docs = sentence_similarity_filter_2((claim, docs))
     return docs, gold_evidence
@@ -194,7 +192,6 @@ def sentence_similarity_filter_2(claim_docs):
     model = pickle.load(open(os.path.join("../project_data", "LaBSE_model.obj"), "rb"))
     tokenizer = pickle.load(open(os.path.join("../project_data", "LaBSE_tokenizer.obj"), "rb"))
     claim, retrieved_docs = claim_docs
-    db = DocDB("../project_data/wiki_docs_skimmed.db")
     sentences = [clean_text_similarity(claim)]
     sentences.extend([clean_text_similarity(doc) for doc in retrieved_docs])
     encoded_input = tokenizer(sentences, padding=True, truncation=True, max_length=64, return_tensors='pt')
@@ -436,7 +433,7 @@ def main():
     train_file = os.path.join('../data', 'train.jsonl')
     df = data.get_train(train_file)
     #phase_1_evaluate_small_random_samples(df)
-    train_set, _ = train_test_split(df, train_size=10,
+    train_set, _ = train_test_split(df, train_size=5,
                                     random_state=seed)  # need to look into NEI ratios and balance
     phase_1(train_set)
 
