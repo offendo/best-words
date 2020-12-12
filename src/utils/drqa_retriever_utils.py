@@ -12,6 +12,13 @@ import numpy as np
 import scipy.sparse as sp
 import sqlite3
 from sklearn.utils import murmurhash3_32
+import sys
+import os
+
+
+drqa_path = os.path.split(os.path.abspath(__file__))[0]
+sys.path.append(drqa_path)
+from drqa_tokenizers import SimpleTokenizer
 
 
 # ------------------------------------------------------------------------------
@@ -135,12 +142,11 @@ class TfidfDocRanker(object):
         # Load from disk
         tfidf_path = tfidf_path or DEFAULTS['tfidf_path']
         # logger.info('Loading %s' % tfidf_path)
-        print(tfidf_path)
         matrix, metadata = load_sparse_csr(tfidf_path)
         self.doc_mat = matrix
         self.ngrams = metadata['ngram']
         self.hash_size = metadata['hash_size']
-        self.tokenizer = tokenizers.get_class(metadata['tokenizer'])()
+        self.tokenizer = SimpleTokenizer()
         self.doc_freqs = metadata['doc_freqs'].squeeze()
         self.doc_dict = metadata['doc_dict']
         self.num_docs = len(self.doc_dict[0])
