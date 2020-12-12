@@ -13,6 +13,9 @@ import torch.multiprocessing as mp
 from torch.utils.data import Dataset
 from torch.nn.functional import cosine_similarity
 
+# Local imports
+from doc_retrieval.doc_retrieval_keyword import get_docs
+
 WIKI_PATH = "../data/wiki-pages"
 
 
@@ -480,6 +483,8 @@ class TestDataset(Dataset):
 
 class OracleDocRetriever:
     """ Gets articles given evidence
+
+    Will always get the correct articles, so it's good to use for training
     """
 
     def __init__(self, wiki_path):
@@ -491,6 +496,45 @@ class OracleDocRetriever:
 
     def retrieve(self, evidence):
         names, lines = zip(*[e for e in evidence.items()])
+
+        # Fetch all the articles in one query
+        articles = self.wiki.get_many(names).fetchall()
+
+        # dictionary of {article_name: article_lines}
+        name2lines = {k: v.split("<SPLIT>") for k, v in articles}
+
+        return name2lines
+
+
+class DocRetriever:
+    """ Imperfect document retriever
+
+    To adjust, just change the retrieve function from `names = get_docs(claim)`
+    to whatever you wish!
+    """
+
+    def __init__(self, wiki_path):
+        self.wiki = WikiDatabase(wiki_path)
+        self.connect_to_db()
+
+    def connect_to_db(self):
+        self.wiki.connect()
+
+    def retrieve(self, claim):
+        """ Retrieves a list of document IDs given a claim
+
+        Parameters
+        ----------
+        claim : str
+            Input claim
+
+        Returns
+        -------
+        dict :
+            map between article names and contents
+        """
+
+        names = get_docs(claim)
 
         # Fetch all the articles in one query
         articles = self.wiki.get_many(names).fetchall()

@@ -1,27 +1,4 @@
 #!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
-# get_ipython().run_line_magic('load_ext', 'nb_black')
-# get_ipython().run_line_magic('load_ext', 'autoreload')
-# get_ipython().run_line_magic('autoreload', '2')
-
-
-# In[2]:
-
-
-# get_ipython().run_line_magic('cd', '../')
-
-
-# # General setup
-# - imports
-# - reading in training data
-# - setting up `device` if cuda is available
-
-# In[72]:
-
 
 # Local stuff
 import data
@@ -40,10 +17,13 @@ from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import DataLoader
 import torch.optim as optim
-torch.multiprocessing.set_start_method('spawn', force=True)
+
+# torch.multiprocessing.set_start_method("spawn", force=True)
+
 
 def prepare(batch):
     NUM_SENTS = 5
+    # RETRIEVER = data.DocRetriever("../data/wiki.db")
     RETRIEVER = data.OracleDocRetriever("../data/wiki.db")
     em = Embedder()
     sel = Selector(em)
@@ -53,47 +33,28 @@ def prepare(batch):
         NUM_SENTS,
         RETRIEVER,
         SELECTOR,
-        oracle_doc_ret=True,
+        oracle_doc_ret=isinstance(RETRIEVER, data.OracleDocRetriever),
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-
-    # In[120]:
-
+    ###########################################################################
+    #                        Setup the datasets/loaders                       #
+    ###########################################################################
 
     train = data.get_train("../data/train.jsonl")
-    # train = train.explode("evidence").reset_index()
     train, test = train_test_split(train)
-
-
-    # # Sentence selection
-
-    # In[121]:
-
 
     torch.cuda.empty_cache()
     em = Embedder()
 
-
-    # In[122]:
-
-
     train_dataset = data.FastDataset(train)
     test_dataset = data.TestDataset(test)
 
-
-    # In[143]:
-
-
     train_loader = DataLoader(
-        train_dataset,
-        batch_size=64,
-        shuffle=True,
-        collate_fn=prepare,
-        num_workers=0,
+        train_dataset, batch_size=64, shuffle=True, collate_fn=prepare, num_workers=0,
     )
     test_loader = DataLoader(
         test_dataset,
@@ -103,9 +64,9 @@ if __name__ == '__main__':
         num_workers=0,  # doesn't work with more than 1 and a sqlite connection
     )
 
-
-    # In[144]:
-
+    ###########################################################################
+    #                       Model Training & Evaluation                       #
+    ###########################################################################
 
     # Model params
     EMBEDDING_DIM = em.model.get_sentence_embedding_dimension()
@@ -120,10 +81,6 @@ if __name__ == '__main__':
     LR = 1e-3
     LR_DECAY = 1e-3
 
-
-    # In[125]:
-
-
     model = lstm.LSTMClassifier(
         embedding_dim=EMBEDDING_DIM,
         hidden_dim=HIDDEN_DIM,
@@ -134,35 +91,27 @@ if __name__ == '__main__':
         pad_idx=train_dataset.input_pad_idx,
     )
     model.to(device)
+
+    # load the pretrained model
     state_dict = torch.load("../models/bilstm-nli-model-2.pt")
     model.load_state_dict(state_dict)
+
+    # Optimizer & Loss function
     optimizer = optim.Adam(model.parameters(), weight_decay=WEIGHT_DECAY, lr=LR)
     loss_fn = torch.nn.CrossEntropyLoss(
-        ignore_index=train_dataset.output_pad_idx,
-        reduction="sum",
+        ignore_index=train_dataset.output_pad_idx, reduction="sum",
     )
 
-
-    # In[145]:
-
-
+    # Evaluate the model on a small subset of stuff
     trainer = FastTrainer(model, optimizer, loss_fn, device, log_every_n=1)
     labels = {0: "REFUTES", 1: "NOT ENOUGH INFO", 2: "SUPPORT"}
 
-
-    # In[152]:
-
-
-    # model.share_memory()
-    # small_test_dataset = data.TestDataset(test[:1000])
-    # small_test_loader = DataLoader(
-    #     small_test_dataset,
-    #     batch_size=64,
-    #     shuffle=True,
-    #     collate_fn=prepare,
-    #     num_workers=0,  # doesn't work with more than 1 and a sqlite connection
-    # )
-    trainer.evaluate(test_loader, labels)
-
-
-    # In[ ]:
+    small_test_dataset = data.TestDataset(test.sample(1000))
+    small_test_loader = DataLoader(
+        small_test_dataset,
+        batch_size=64,
+        shuffle=False,
+        collate_fn=prepare,
+        num_workers=0,  # doesn't work with more than 0
+    )
+    trainer.evaluate(small_test_loader, labels)

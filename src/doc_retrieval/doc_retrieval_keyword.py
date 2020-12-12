@@ -1,6 +1,7 @@
 import re
 import pickle
 from rapidfuzz import fuzz
+from pathlib import Path
 
 
 def _clean_text(text):
@@ -58,7 +59,7 @@ def get_docs(claim: str):
     :return docs: list
                   doc ids of the top 5 documents that matched with claim
     """
-    with open("../../data/wiki_doc_skimmed_ids.obj", "rb") as file:
+    with open(Path(__file__).parent / "../../data/wiki_doc_skimmed_ids.obj", "rb") as file:
         ids = pickle.load(file)
     docs = []
     compare_claim = _clean_text(claim)
