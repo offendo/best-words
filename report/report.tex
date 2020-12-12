@@ -23,7 +23,7 @@
 % and will typically save some space.
 \usepackage{microtype}
 
-\aclfinalcopy % Uncomment this line for the final submission
+\aclfinalcopy% Uncomment this line for the final submission
 %\def\aclpaperid{***} %  Enter the acl Paper ID here
 
 %\setlength\titlebox{5cm}
@@ -52,11 +52,57 @@
 \begin{document}
 \maketitle
 \begin{abstract}
-This document contains the instructions for preparing a manuscript for the proceedings of ACL 2020.
-The document itself conforms to its own specifications, and is therefore an example of what your manuscript should look like.
-These instructions should be used for both papers submitted for review and for final versions of accepted papers.
-Authors are asked to conform to all the directions reported in this document.
+  This is the abstract. We can add it here if necessary.
 \end{abstract}
+
+\section{Sentence Selection}%
+\label{sec:sentence-selection}
+
+The second task in the pipeline is sentence selection, in which we choose a
+subset of salient sentences from the retrieved articles. It is possible to
+remove this step entirely, instead assuming all sentences have a non-zero
+probability of saliency and letting the next item in the pipeline distinguish.
+However, the baseline approach \cite{fever2018}, despite the imperfect recall,
+improved overall performance when limiting the number of selected sentences.
+
+\subsection{Previous Work}%
+\label{subsec:sentence-selection-prev-work}
+
+The baseline approach used bi-gram TF-IDF vectors for the claim and each target
+vector, as well as their cosine similarity, and ranked the top-$k$ sentences. At
+$k=5$ and $l=5$ documents, they achieve 55.3\% recall for verifiable claims.
+
+\subsubsection{name}%
+\label{subsubsec:label}
+
+
+
+\subsection{Approach}%
+\label{subsec:sentence-selection-approach}
+
+
+
+\section{Natural Language Inference}%
+\label{sec:nli}
+
+\subsection{Previous Work}%
+\label{subsec:nli-prev-work}
+
+The winning team from the first FEVER task workshop UNC-NLP \citep{unc2018}
+developed the \textbf{Neural Semantic Matching Network}, a four layer model
+\footnotemark which performs semantic matching between two textual sequences.
+Importantly, the team used no intermediate representation prior to training the
+model, instead using a BiLSTM as an encoding layer.
+
+\footnotetext{The four layers are the encoding layer, alignment layer, matching
+layer, and output layer}
+
+\subsection{Approach}%
+\label{subsec:nli-approach}
+
+We use
+
+
 \bibliography{report}
 \bibliographystyle{acl_natbib}
 

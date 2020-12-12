@@ -7,7 +7,7 @@ from itertools import chain
 from tqdm import tqdm
 from sklearn.metrics import classification_report
 import torch
-from fever import scorer
+from fever.scorer import fever_score
 
 
 class Trainer:
@@ -76,8 +76,8 @@ class Trainer:
             running_loss_history.append(running_loss)
 
             # Log the running loss
-            if self.log_every_n and i % self.log_every_n == 0:
-                progress.set_description(f"Loss: {loss}\tRunning loss: {running_loss}")
+            progress.set_description(f"Loss: {loss}\tRunning loss: {running_loss}")
+            # if self.log_every_n and i % self.log_every_n == 0:
                 # print(f"predictions: {torch.argmax(logits, dim=-1).tolist()}")
                 # print(f"y: {y.view(-1).tolist()}")
 
@@ -261,3 +261,158 @@ class Trainer:
 
             valid_losses.append(valid_loss_hist)
             valid_running_losses.append(valid_running_loss_hist)
+
+
+
+class FastTrainer:
+
+    def __init__(self, model, optimizer, loss_fn, device, log_every_n=None):
+        self.model = model
+        self.optimizer = optimizer
+        self.loss_fn = loss_fn
+        self.device = device
+        self.log_every_n = log_every_n
+
+    def _print_summary(self):
+        """Print summary of the training method"""
+        print(f"model: {self.model}")
+        print(f"optimizer: {self.optimizer}")
+        print(f"loss_fn: {self.loss_fn}")
+
+    def train(self, loader):
+        """ Run a single epoch of training
+
+        Parameters
+        ----------
+        loader : DataLoader
+            DataLoader for a dataset to train
+
+        Returns
+        -------
+        ([float], [float]) :
+            Loss history (for plotting purposes)
+        """
+
+        # Run the model in training mode
+        self.model.train()
+
+        loss_history = []
+        running_loss = 0.0
+        running_loss_history = []
+
+        progress = tqdm(enumerate(loader), total=len(loader))
+        for i, batch in progress:
+
+            # Zero out the gradient
+            self.optimizer.zero_grad()
+
+            # Split up the batch
+            X, y, json = batch
+
+            # X : shape [batch_size, num sentences, input dim]
+            # y : shape [batch_size, num sentences, output dim]
+
+            # Foward
+            logits = self.model(X.to(self.device))
+
+            # logits : shape [batch_size, num_sentences, output dim]
+            # Reshape to (num sentences * batch size, output dim)
+            logits = logits.view(-1, logits.shape[-1])
+
+            # Compute loss & add to history
+            loss = self.loss_fn(logits, y.view(-1).to(self.device))
+            loss_history.append(loss.item())
+
+            # Compute a rolling average loss & add to history
+            running_loss = sum(loss_history[-5:]) / 5
+            running_loss_history.append(running_loss)
+
+            # Log the running loss
+            progress.set_description(f"Loss: {loss}\tRunning loss: {running_loss}")
+
+            # Backpropogation
+            loss.backward()
+
+            # Clip the norms to prevent explosion
+            nn.utils.clip_grad_norm_(self.model.parameters(), 3.0)
+
+            # update step
+            self.optimizer.step()
+            progress.update(1)
+
+        print("Epoch completed!")
+        print(f"Epoch Loss: {running_loss}")
+
+        return loss_history, running_loss_history
+
+    def evaluate(self, loader, labels):
+        """ Evaluate model on validation data
+
+        Parameters
+        ----------
+        loader : data.DataLoader
+            Data loader class containing validation data
+
+        labels : dict
+            Index to output class
+
+        Returns
+        -------
+        ([float], [float]):
+            Loss history and running loss history
+
+        """
+        self.model.eval()
+
+        jsons = []
+
+        loss_history = []
+        running_loss = 0.0
+        running_loss_history = []
+
+        # don't compute gradient
+        with torch.no_grad():
+            for i, batch in tqdm(enumerate(loader), total=len(loader)):
+                # Split up the batch
+                X, y, json_list = batch
+
+                # Foward
+                logits = self.model(X.to(self.device))
+                og_shape = logits.shape
+
+                # Reshape to be (sent len * batch size, output dim)
+                logits = logits.view(-1, logits.shape[-1])
+
+                # Compute loss & add to history
+                loss = self.loss_fn(logits, y.view(-1).to(self.device))
+
+                # no backprop
+                loss_history.append(loss.item())
+
+                running_loss += (loss_history[-1] - running_loss) / (i + 1)
+                running_loss_history.append(running_loss)
+
+                # softmax to normalize probabilities class
+                probs = torch.softmax(logits, dim=-1)
+
+                # get the output class from the probs
+                # also, reshape the prediction back to sentences
+                predictions = torch.argmax(probs, dim=-1).reshape(og_shape[:-1])
+
+                for pred, json in zip(predictions.tolist(), json_list):
+                    c = Counter(pred)
+                    # most common value, or 1 (NEI) if it's a tie
+                    most_common = 2 if c[2] > c[0] else 0 if c[0] > c[2] else 1
+                    json['predicted_label'] = labels[most_common]
+                    json['label'] = labels[json['label']]
+                    jsons.append(json)
+
+        # print(f"Evaluation loss: {running_loss}")
+        # print("Classification report after epoch:")
+        strict_score, label_accuracy, precision, recall, f1 = fever_score(jsons)
+        print(f'Fever score: {strict_score}')
+        print(f'Label accuracy: {label_accuracy}')
+        print(f'Precision: {precision}')
+        print(f'Recall: {recall}')
+        print(f'F1: {f1}')
+        return loss_history, running_loss_history
