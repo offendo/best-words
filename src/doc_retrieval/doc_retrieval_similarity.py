@@ -1,14 +1,11 @@
-import torch
-
-#  Hugging Face Transformers library - Need to install transformers library: pip install transformers
-from transformers import AutoTokenizer, AutoModel
+from sentence_transformers import SentenceTransformer
 
 from sklearn.metrics.pairwise import cosine_similarity
 
 import pickle
 
 import re
-# Need to install rapidfuzz library: pip install rapidfuzz
+
 from rapidfuzz import fuzz
 
 from pathlib import Path
@@ -67,20 +64,15 @@ def _rank(claim_docs):
         :return filtered_docs: list
                 doc ids of the documents that had the top 5 cosine similarity values with the claim
     """
-    #tokenizer = pickle.load(open(Path(__file__).parent / "../../project_data/LaBSE_tokenizer.obj", "rb"))
-    #model = pickle.load(open(Path(__file__).parent / "../../project_data/LaBSE_model.obj", "rb"))
-    tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/LaBSE")
-    model = AutoModel.from_pretrained("sentence-transformers/LaBSE")
+    #tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/LaBSE")
+    #model = AutoModel.from_pretrained("sentence-transformers/LaBSE")
+    model = SentenceTransformer('LaBSE')
 
     claim, retrieved_docs = claim_docs
     sentences = [_clean_text_similarity(claim)]
     sentences.extend([_clean_text_similarity(doc_id) for doc_id in retrieved_docs])
-    encoded_input = tokenizer(sentences, padding=True, truncation=True, max_length=64, return_tensors='pt')
-    with torch.no_grad():
-        model_output = model(**encoded_input)
 
-    embeddings = model_output.pooler_output
-    embeddings = torch.nn.functional.normalize(embeddings)
+    embeddings = model.encode(sentences)
 
     docs_similarities = []
     for i in range(1, len(retrieved_docs)+1):
