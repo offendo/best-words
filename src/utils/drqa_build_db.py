@@ -15,7 +15,7 @@ import importlib.util
 
 from multiprocessing import Pool as ProcessPool
 from tqdm import tqdm
-from drqa.retriever import utils
+from drqa_retriever_utils import normalize
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -79,7 +79,7 @@ def get_contents(filename):
             if not doc:
                 continue
             # Add the document
-            documents.append((utils.normalize(doc['id']), doc['text']))
+            documents.append((normalize(doc['id']), doc['text']))
     return documents
 
 
