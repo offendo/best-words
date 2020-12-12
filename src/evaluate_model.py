@@ -93,14 +93,14 @@ if __name__ == '__main__':
         batch_size=64,
         shuffle=True,
         collate_fn=prepare,
-        num_workers=4,
+        num_workers=0,
     )
     test_loader = DataLoader(
         test_dataset,
         batch_size=64,
         shuffle=True,
         collate_fn=prepare,
-        num_workers=4,  # doesn't work with more than 1 and a sqlite connection
+        num_workers=0,  # doesn't work with more than 1 and a sqlite connection
     )
 
 
@@ -154,15 +154,15 @@ if __name__ == '__main__':
 
 
     # model.share_memory()
-    small_test_dataset = data.TestDataset(test[:1000])
-    small_test_loader = DataLoader(
-        small_test_dataset,
-        batch_size=64,
-        shuffle=True,
-        collate_fn=prepare,
-        num_workers=0,  # doesn't work with more than 1 and a sqlite connection
-    )
-    trainer.evaluate(small_test_loader, labels)
+    # small_test_dataset = data.TestDataset(test[:1000])
+    # small_test_loader = DataLoader(
+    #     small_test_dataset,
+    #     batch_size=64,
+    #     shuffle=True,
+    #     collate_fn=prepare,
+    #     num_workers=0,  # doesn't work with more than 1 and a sqlite connection
+    # )
+    trainer.evaluate(test_loader, labels)
 
 
     # In[ ]:
