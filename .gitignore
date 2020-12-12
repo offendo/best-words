@@ -130,3 +130,9 @@ dmypy.json
 /.projectile
 data/
 /report/.auctex-auto/
+/report/report.synctex.gz
+/report/report.pdf
+/report/report.out
+/report/report.blg
+/report/report.bbl
+/report/report.aux

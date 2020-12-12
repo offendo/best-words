@@ -6,12 +6,12 @@ import time
 import pandas as pd
 import os
 import re
+from collections import ChainMap
 
 import torch
 import torch.multiprocessing as mp
 from torch.utils.data import Dataset
 from torch.nn.functional import cosine_similarity
-torch.multiprocessing.set_start_method('spawn', force=True)
 
 WIKI_PATH = "../data/wiki-pages"
 
@@ -55,6 +55,15 @@ def _clean_evidence(row: list):
     return cleaned
 
 
+def _unclean_evidence(row: list):
+    """This is stupid. Why am I doing this?"""
+    uncleaned = []
+    for st in row:
+        s = [[None, None] + evidence for evidence in st]
+        uncleaned.append(s)
+    return uncleaned
+
+
 def _format_evidence(row: list):
     """ Converts list of (article, line) pairs into a dictionary
 
@@ -70,10 +79,25 @@ def _format_evidence(row: list):
     """
     result = {}
     for art, line in row:
+        if art is None:
+            return {}
         if art in result:
             result[art].append(line)
         else:
             result[art] = [line]
+    return result
+
+
+def _ungroup_evidence(row: list):
+    result = {}
+    for group in row:
+        for art, line in group:
+            if art is None:
+                return {}
+            if art in result:
+                result[art].append(line)
+            else:
+                result[art] = [line]
     return result
 
 
@@ -233,13 +257,16 @@ class WikiDatabase:
 
     def __init__(self, path):
         self.path = path
+        self.conn = None
+        self.cursor = None
 
     def connect(self):
-        self.conn = sql.connect(self.path)
-        self.cursor = self.conn.cursor()
+        if self.conn is None:
+            self.conn = sql.connect(self.path)
+            self.cursor = self.conn.cursor()
 
     def close(self):
-        if self.conn:
+        if self.conn is not None:
             self.conn.commit()
             self.cursor.close()
             self.conn.close()
@@ -259,14 +286,16 @@ class WikiDatabase:
 
 
 class SentenceDataset(Dataset):
-    def __init__(self, data, embedder, wiki_path, num_procs):
+    def __init__(self, data, embedder, num_procs, wiki_path):
         self.data = data[data["verifiable"]]
         self.embedder = embedder
         self.wiki = WikiDatabase(wiki_path)
-        self.wiki.connect()
         self.input_pad_idx = 0
         self.output_pad_idx = 3
         self.num_procs = num_procs
+
+    def connect_to_db(self):
+        self.wiki.connect()
 
     def __getitem__(self, idx: int):
         """ Returns a claim, label (0, 1, or 2), and list of
@@ -288,101 +317,6 @@ class SentenceDataset(Dataset):
         label = row["label"]  # 0 - refute, 1 - neutral, 2 - support
 
         return claim, label, evidence
-
-    def collate(self, batch: list):
-        """ Collates a batch of evidence into model-readable format
-
-        Parameters
-        ----------
-        batch : list
-            List of items retrieved via `__getitem__`
-
-        Returns
-        -------
-        Unknown at the moment
-        """
-
-        # claims : list of strings
-        # labels : list of ints
-        # evidences : list of dicts
-        claims, labels, evidences = zip(*batch)
-
-        # flatten the list of dicts and split the keys/values
-        # into list of article names (keys) and line numbers
-        all_article_names, all_line_numbers = zip(
-            *[items for e in evidences for items in e.items()]
-        )
-
-        # Fetch all the articles in one query
-        all_articles = self.wiki.get_many(all_article_names).fetchall()
-
-        # dictionary of {article_name: article_lines}
-        name2lines = {k: v.split("<SPLIT>") for k, v in all_articles}
-
-        ###########################
-        #   BOTTLENECK IN SPEED   #
-        ###########################
-        # start = time.time()
-        # embed all the article texts
-        name2embed = {k: self.embedder.embed(v) for k, v in name2lines.items()}
-        # with mp.Pool(processes=self.num_procs) as pool:
-        #     embeddings = pool.map(embedder.embed, name2lines.values())
-
-        # name2embed = dict(embeddings)
-        # end = time.time()
-        # print("Embedding: ", end - start)
-
-        # Go through each element in the batch and build the input/output
-        # tensors and the starting indices for each article
-        prepared_batch = []
-        for claim, label, evidence in batch:
-            i = 0
-            starting_indices = {}
-            target_numbers = []
-            claim_embed = self.embedder.embed(claim)
-            targets = []
-            # get the starting indices for each article
-            for article_name, lines in evidence.items():
-                # add the embeddings for this article to the list of targets
-                embeddings = name2embed[article_name]
-                targets.extend(embeddings)
-                # mark this article as starting at the current index
-                starting_indices[i] = article_name
-                # reindex the lines to start at the new index
-                # occasionally we get a sentence number that's not right
-                reindexed_lines = [num + i for num in lines]
-                target_numbers.extend(reindexed_lines)
-                # increment the index by number of lines
-                i += len(lines)
-
-            # Concatenate the claim and target embeddings
-            stacked_targets = torch.stack(targets)
-            cosine_sims = cosine_similarity(claim_embed, stacked_targets, dim=-1)
-            # k = min(15, len(stacked_targets))
-            k = len(stacked_targets)
-            # top_k_idx = torch.topk(cosine_sims, k=k).indices
-            # top_k_targets = stacked_targets[top_k_idx]
-            # Concatenate the claim and top k target embeddings
-            stacked_claims = torch.stack([claim_embed] * k)
-            X = torch.cat(
-                [stacked_claims, cosine_sims.unsqueeze(1), stacked_targets], dim=-1
-            )
-
-            # Convert the sentence indices into a list of support/refute class
-            # indices. 1 is default since 'not enough info' is mapped to 1
-            y = torch.ones(size=(len(targets), ))
-            for n in target_numbers:
-                y[n] = label
-
-            # only grab the indices we're using
-            # y = y[top_k_idx]
-
-            # Add the elements to the prepared batch
-            # input, article indices, output classes, correct label
-            prepared_batch.append((X, starting_indices, y, label))
-
-        # pad the tensors
-        return self.pad(prepared_batch)
 
     def pad_output_tensor(self, ys):
         """ Creates a padded tensor from a batch of inputs
@@ -481,13 +415,10 @@ class SentenceDataset(Dataset):
         return result
 
 
-class MLPSentenceDataset(Dataset):
-    def __init__(self, data, embedder, wiki_path, num_procs):
+class FastDataset(Dataset):
+    def __init__(self, data):
         self.data = data[data["verifiable"]]
-        self.embedder = embedder
-        self.wiki = WikiDatabase(wiki_path)
-        self.wiki.connect()
-        self.input_pad_idx = 0
+        self.input_pad_idx = 3
         self.output_pad_idx = 3
 
     def __getitem__(self, idx: int):
@@ -506,215 +437,148 @@ class MLPSentenceDataset(Dataset):
         """
         row = self.data.iloc[idx]
         claim = row["claim"]
-        evidence = _format_evidence(row["evidence"])
+        evidence = row["evidence"]
         label = row["label"]  # 0 - refute, 1 - neutral, 2 - support
 
         return claim, label, evidence
 
-    def collate(self, batch: list):
-        """ Collates a batch of evidence into model-readable format
+    def __len__(self):
+        return len(self.data)
+
+
+class TestDataset(Dataset):
+    def __init__(self, data):
+        # don't care about verifiable or not
+        self.data = data[data["verifiable"]]
+        self.input_pad_idx = 3
+        self.output_pad_idx = 3
+
+    def __getitem__(self, idx: int):
+        """ Returns a claim, label (0, 1, or 2), and list of
+        `(article, line number)` pairs
 
         Parameters
         ----------
-        batch : list
-            List of items retrieved via `__getitem__`
+        idx : int
+            Index of row to grab
 
         Returns
         -------
-        Unknown at the moment
+        Tuple[str, int, list]
+            claim, label, and associated evidence
         """
+        row = self.data.iloc[idx]
+        claim = row["claim"]
+        evidence = row["evidence"]
+        label = row["label"]  # 0 - refute, 1 - neutral, 2 - support
 
-        # claims : list of strings
-        # labels : list of ints
-        # evidences : list of dicts
-        claims, labels, evidences = zip(*batch)
-
-        # flatten the list of dicts and split the keys/values
-        # into list of article names (keys) and line numbers
-        all_article_names, all_line_numbers = zip(
-            *[items for e in evidences for items in e.items()]
-        )
-
-        # Fetch all the articles in one query
-        all_articles = self.wiki.get_many(all_article_names).fetchall()
-
-        # dictionary of {article_name: article_lines}
-        name2lines = {k: v.split("<SPLIT>") for k, v in all_articles}
-
-        ###########################
-        #   BOTTLENECK IN SPEED   #
-        ###########################
-        # start = time.time()
-        # embed all the article texts
-        name2embed = {k: self.embedder.embed(v) for k, v in name2lines.items()}
-        # with mp.Pool(processes=self.num_procs) as pool:
-        #     embeddings = pool.map(embedder.embed, name2lines.values())
-
-        # name2embed = dict(embeddings)
-        # end = time.time()
-        # print("Embedding: ", end - start)
-
-        # Number of items in this batch which correctly capture all the sentences
-        selected_sentences_correct = 0
-
-        # Go through each element in the batch and build the input/output
-        # tensors and the starting indices for each article
-        prepared_batch = []
-        for claim, label, evidence in batch:
-            i = 0
-            starting_indices = {}
-            target_numbers = []
-            claim_embed = self.embedder.embed(claim)
-            targets = []
-            # get the starting indices for each article
-            for article_name, lines in evidence.items():
-                # add the embeddings for this article to the list of targets
-                embeddings = name2embed[article_name]
-                targets.extend(embeddings)
-                # mark this article as starting at the current index
-                starting_indices[i] = article_name
-                # reindex the lines to start at the new index
-                reindexed_lines = [num + i for num in lines]
-                target_numbers.extend(reindexed_lines)
-                # increment the index by number of lines
-                i += len(lines)
-
-            # stack the targets
-            stacked_targets = torch.stack(targets)
-            # get the top 5 targets by cosine sim
-            cosine_sims = cosine_similarity(claim_embed, stacked_targets, dim=-1)
-
-            # get up to 8 of the most similar targets
-            # 5 gets around ?% of the time
-            # 8 gets around 75% of the time
-            # 15 gets around ?% of the time
-            k = min(300, len(stacked_targets))
-            top_k_idx = torch.topk(cosine_sims, k=k).indices
-            top_k_targets = stacked_targets[top_k_idx]
-
-            # Concatenate the claim and top k target embeddings
-            stacked_claims = torch.stack([claim_embed] * k)
-            X = torch.cat(
-                [stacked_claims, cosine_sims[top_k_idx].unsqueeze(1), top_k_targets], dim=-1
-            )
-
-            # Convert the sentence indices into a list of support/refute class
-            # indices. 1 is default since 'not enough info' is mapped to 1
-            y = torch.ones(size=(len(targets), ))
-            for n in target_numbers:
-                y[n] = label
-
-            # only grab the indices we're using
-            y = y[top_k_idx]
-
-            # Add the elements to the prepared batch
-            # input, article indices, output classes, correct label
-            prepared_batch.append((X, starting_indices, y, label))
-
-            # Check to see if the target numbers appear in the top 5
-            # (this determines whether sentence selection was accurate)
-            is_correct = all([i in top_k_idx for i in target_numbers])
-            selected_sentences_correct += int(is_correct)
-
-        # print(f'Batch had {selected_sentences_correct} out of {len(prepared_batch)} correct')
-
-        # pad the tensors
-        # return self.pad(prepared_batch)
-        # Xs, indices, ys, labels = zip(*prepared_batch)
-        return self.pad(prepared_batch)
-
-    def pad_output_tensor(self, ys):
-        """ Creates a padded tensor from a batch of inputs
-
-        Parameters
-        ----------
-        ys : list
-            list of torch Tensors of shape [n_sentences, ]
-
-        Returns
-        -------
-        torch.Tensor
-            tensor of shape [batch_size, max_n_sentences]
-        """
-        max_n_sents = max(ys, key=lambda x: x.shape[0]).shape[0]
-
-        all_padded = torch.full(
-            size=(len(ys), max_n_sents),
-            fill_value=self.output_pad_idx,
-            dtype=torch.long,
-        )
-
-        for i, y in enumerate(ys):
-            # create the padded tensor with the pad index
-            # fill it up with the text
-            n_sents = len(y)
-            all_padded[i, :n_sents] = y
-
-        return all_padded
-
-    def pad_input_tensor(self, Xs):
-        """ Creates a padded tensor from a batch of inputs
-
-        Parameters
-        ----------
-        Xs : list
-            list of torch Tensors of shape [n_sentences, embedding_dim]
-
-        Returns
-        -------
-        torch.Tensor
-            tensor of shape [batch_size, max_n_sentences, embedding_dim]
-        """
-        max_n_sents = max(Xs, key=lambda x: x.shape[0]).shape[0]
-
-        _, embedding_dim = Xs[0].shape
-        all_padded = torch.full(
-            size=(len(Xs), max_n_sents, embedding_dim),
-            fill_value=self.output_pad_idx,
-            dtype=torch.float,
-        )
-
-        for i, x in enumerate(Xs):
-            # create the padded tensor with the pad index
-            # fill it up with the text
-            n_sents, _ = x.shape
-            all_padded[i, :n_sents, :] = x
-
-        return all_padded
-
-    def pad(self, batch):
-        Xs, indices, ys, labels = zip(*batch)
-        xs = self.pad_input_tensor(Xs)
-        ys = self.pad_output_tensor(ys)
-        return (xs, indices, ys, labels)
+        return claim, label, evidence
 
     def __len__(self):
         return len(self.data)
 
-    def split_line_numbers_by_article(line_numbers, starting_indices):
-        """ Converts sentence indices (indexing a collection of articles) to
-        line numbers (indexing a single article) and its respective article.
 
-        Parameters
-        ----------
-        line_numbers : list
-            A list of numbers indexing a collection of sentences from multiple articles
-        starting_indices : dict
-            A dict of {index: article} which tells which article starts at which index.
+class OracleDocRetriever:
+    """ Gets articles given evidence
+    """
 
-        Returns
-        -------
-        dict :
-            dictionary of {article: [indices]}
-        """
-        result = {}
-        for line in line_numbers:
-            index, article = max(
-                [(k, v) for k, v in starting_indices.items() if k < line]
-            )
-            if article in result:
-                result[article].append(line - index)
-            else:
-                result[article] = [line - index]
+    def __init__(self, wiki_path):
+        self.wiki = WikiDatabase(wiki_path)
+        self.connect_to_db()
 
-        return result
+    def connect_to_db(self):
+        self.wiki.connect()
+
+    def retrieve(self, evidence):
+        names, lines = zip(*[e for e in evidence.items()])
+
+        # Fetch all the articles in one query
+        articles = self.wiki.get_many(names).fetchall()
+
+        # dictionary of {article_name: article_lines}
+        name2lines = {k: v.split("<SPLIT>") for k, v in articles}
+
+        return name2lines
+
+
+def collate(
+    batch, num_sentences, retriever, selector, oracle_doc_ret=True,
+):
+    """ Collates a batch of evidence into model-readable format
+
+    Parameters
+    ----------
+    batch : list
+        List of items retrieved via `__getitem__`
+    num_sentences : int
+        Number of sentences to select as evidence to a claim
+    retriever : DocRetriever, OracleDocRetriever
+        An object implementing a `retriever` function to retrieve articles from DB
+    selector : Selector
+        Sentence selector object implementing `choose_top_n` function
+
+
+    Returns
+    -------
+    Unknown at the moment
+    """
+
+    batch_json_items = []
+    batch_sentences = []
+    batch_labels = []
+
+    for claim, label, ev in batch:
+        formatted_ev = _ungroup_evidence(ev)
+        # Document retrieval
+
+        # If we're using the oracle, pass in the evidence
+        # Otherwise, pass in the claim
+        if oracle_doc_ret:
+            name2lines = retriever.retrieve(formatted_ev)
+        else:
+            name2lines = retriever.retrieve(claim)
+
+        # Sentence Selection
+        name2idx = {}
+        real_indices = []
+        i = 0
+        cat_lines = []
+        for name, lines in name2lines.items():
+            name2idx[name] = [i + num for num in range(len(lines))]
+            # these are the "correct" indices we have to predict
+            real_indices.extend(name2idx[name])
+            i += len(lines)
+            cat_lines += lines
+
+        sentences, pred_indices = selector.choose_top_n(
+            claim, cat_lines, num_sentences, pad=True
+        )
+
+        pred_ev = []
+        for name, idxs in name2idx.items():
+            pred_ev.extend([[name, p] for p in pred_indices.tolist() if p in idxs])
+        # assuming we got the label correct; that way we can check our maximum
+        # possible fever score after sentence selection
+        json_item = {
+            "claim": claim,
+            "label": label,
+            "predicted_label": label,
+            "predicted_evidence": pred_ev,
+            "evidence": _unclean_evidence(ev),
+        }
+
+        batch_json_items.append(json_item)
+
+        # 1 is NEI tag, so that's what we use as default
+        y = torch.ones(size=(num_sentences,), dtype=torch.long)
+        for i, (pred, real) in enumerate(zip(pred_indices, real_indices)):
+            if pred == real:
+                y[i] = label
+
+        batch_labels.append(y)
+        batch_sentences.append(sentences)
+
+    X = torch.stack(batch_sentences)
+    y = torch.stack(batch_labels)
+
+    return X, y, batch_json_items
