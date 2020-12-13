@@ -445,7 +445,7 @@ class FastDataset(Dataset):
 class TestDataset(Dataset):
     def __init__(self, data):
         # don't care about verifiable or not
-        self.data = data[data["verifiable"]]
+        self.data = data # [data["verifiable"]]
         self.input_pad_idx = 3
         self.output_pad_idx = 3
 

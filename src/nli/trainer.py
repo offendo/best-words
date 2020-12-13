@@ -399,14 +399,12 @@ class FastTrainer:
 
                 # softmax to normalize probabilities class
                 probs = torch.softmax(logits, dim=-1)
-                print(probs)
 
                 # get the output class from the probs
                 # also, reshape the prediction back to sentences
                 predictions = torch.argmax(probs, dim=-1).reshape(og_shape[:-1])
 
                 for pred, json in zip(predictions.tolist(), json_list):
-                    print(pred)
                     c = Counter(pred)
                     # most common value, or 1 (NEI) if it's a tie
                     most_common = 2 if c[2] > c[0] else 0 if c[0] > c[2] else 1

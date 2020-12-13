@@ -21,14 +21,14 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 
 torch.multiprocessing.set_start_method("spawn", force=True)
-np.random.seed(12345)
+np.random.seed(123456)
 
 
 def prepare(batch):
     NUM_SENTS = 10
     RETRIEVER = data.DocRetriever("data/wiki.db", tfidf_get_docs)
     # RETRIEVER = data.OracleDocRetriever("data/wiki.db")
-    oracle = data.OracleDocRetriever("data/wiki.db")
+    # oracle = data.OracleDocRetriever("data/wiki.db")
     em = Embedder()
     sel = Selector(em)
     SELECTOR = sel
@@ -38,7 +38,7 @@ def prepare(batch):
         RETRIEVER,
         SELECTOR,
         oracle_doc_ret=isinstance(RETRIEVER, data.OracleDocRetriever),
-        oracle=oracle
+        oracle=oracle,
     )
 
 
@@ -132,7 +132,7 @@ if __name__ == "__main__":
     #     num_workers=2,  # doesn't work with more than 1
     #     prefetch_factor=2,
     # )
-    small_test_dataset = data.TestDataset(test.sample(20))
+    small_test_dataset = data.TestDataset(test.sample(200))
     small_test_loader = DataLoader(
         small_test_dataset,
         batch_size=2,
@@ -140,7 +140,7 @@ if __name__ == "__main__":
         collate_fn=prepare,
         num_workers=0,  # doesn't work with more than 0
     )
-    trainer.evaluate_sentence_selection(small_test_loader, labels)
+    trainer.evaluate(small_test_loader, labels)
     # trainer.fit(
     #     small_train_loader,
     #     small_test_loader,
