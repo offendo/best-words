@@ -10,6 +10,47 @@ from rapidfuzz import fuzz
 
 from pathlib import Path
 
+import sqlite3
+
+import unicodedata
+
+
+class DocDB(object):
+    """Sqlite backed document storage.
+    Implements get_doc_text(doc_id).
+    Credit: This portion of the code was taken from Facebook's DrQA
+    project under the retrieval library (doc_db.py)
+    """
+
+    def __init__(self, db_path=None):
+        self.path = db_path or DEFAULTS['db_path']
+        self.connection = sqlite3.connect(self.path, check_same_thread=False)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    def path(self):
+        """Return the path to the file that backs this database."""
+        return self.path
+
+    def close(self):
+        """Close the connection to the database."""
+        self.connection.close()
+
+    def get_doc_text(self, doc_id):
+        """Fetch the raw text of the doc for 'doc_id'."""
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT text FROM documents WHERE id = ?",
+            (unicodedata.normalize('NFD', doc_id),)
+        )
+        result = cursor.fetchone()
+        cursor.close()
+        return result if result is None else result[0]
+
 
 def _clean_text(text):
     """
@@ -48,6 +89,24 @@ def _clean_text_similarity(text):
     return new_text
 
 
+def _get_cleaned_first_line_similarity(db, doc_id):
+    """
+
+    Parameters
+    ----------
+    db - DocDB database object (sqlite3)
+    doc_id - string that represents the id of a document in the database
+
+    Returns
+    -------
+    first_line: string - cleaned text
+    """
+    doc = db.get_doc_text(doc_id)
+    sent_delim = re.compile(r'\s+\.\s+')
+    first_line = re.split(sent_delim, doc)[0]
+    return _clean_text_similarity(first_line + ".")
+
+
 def _rank(claim_docs):
     """
         Takes the documents filtered based on partial ratio threshold of > 75, and ranks the docs
@@ -64,16 +123,20 @@ def _rank(claim_docs):
         :return filtered_docs: list
                 doc ids of the documents that had the top 5 cosine similarity values with the claim
     """
-    #tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/LaBSE")
-    #model = AutoModel.from_pretrained("sentence-transformers/LaBSE")
-    model = SentenceTransformer('LaBSE')
 
+    model = SentenceTransformer('LaBSE')
+    # this second model looks better suited for task, but not enough testing to conclude that it is better than LaBSE
+    #model = SentenceTransformer('distilroberta-base-msmarco-v2')
+
+    db = DocDB(Path(__file__).parent / "../../project_data/wiki_docs_skimmed.db")
     claim, retrieved_docs = claim_docs
     sentences = [_clean_text_similarity(claim)]
-    sentences.extend([_clean_text_similarity(doc_id) for doc_id in retrieved_docs])
+
+    # looks at doc id and first line of doc
+    sentences.extend([(_clean_text_similarity(doc_id)+" "+_get_cleaned_first_line_similarity(db, doc_id)) for doc_id in retrieved_docs])
+    db.close()
 
     embeddings = model.encode(sentences)
-
     docs_similarities = []
     for i in range(1, len(retrieved_docs)+1):
         # find cosine similarity of the claim and this ith doc
@@ -110,7 +173,5 @@ def get_docs(claim: str):
 
 
 if __name__ == "__main__":
-    # It does pretty poorly on this example :(
-    # but better than doc_retrieval_keyword.py in terms of articles with name Robert in them :)
     claim = "Robert J. O'Neill was born April 10, 1976."
     print(get_docs(claim))
