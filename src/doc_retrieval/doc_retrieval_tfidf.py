@@ -3,6 +3,7 @@ import itertools
 import os
 import sys
 import numpy as np
+from scipy.stats import zscore
 from sklearn.preprocessing import MinMaxScaler
 
 proj_path = os.path.split(os.path.split(os.path.split(os.path.abspath(__file__))[0])[0])[0]
@@ -33,8 +34,13 @@ def mms_get_predicted():
         mms_pred.append((predicted_row[0], mms_docset))
     return mms_pred
 
-def get_docs(claim, k=5, include_scores=False, norm_type=None):
+def get_docs(claim, k=5, include_scores=False, norm_type=None, zscore_threshold=False):
     closest_docs, score = ranker.closest_docs(claim, k=k)
+    if zscore_threshold:
+        softmax = np.exp(score) / np.exp(score).sum()
+        scores = zscore(softmax)
+        return [doc for doc, s in zip(closest_docs, scores) if s >= zscore_threshold]
+
     if include_scores:
         return claim, set(closest_docs)
     return closest_docs

@@ -528,7 +528,7 @@ class DocRetriever:
             map between article names and contents
         """
 
-        names = self.get_docs(claim, threshold=80)
+        names = self.get_docs(claim, zscore_threshold=0.1)
 
         # Fetch all the articles in one query
         articles = self.wiki.get_many(names).fetchall()
@@ -540,7 +540,7 @@ class DocRetriever:
 
 
 def collate(
-    batch, num_sentences, retriever, selector, oracle_doc_ret=True,
+    batch, num_sentences, retriever, selector, oracle_doc_ret=True, oracle=None
 ):
     """ Collates a batch of evidence into model-readable format
 
@@ -575,6 +575,10 @@ def collate(
             name2lines = retriever.retrieve(formatted_ev)
         else:
             name2lines = retriever.retrieve(claim)
+            if oracle:
+                oracle_name2lines = oracle.retrieve(formatted_ev)
+                print('oracle: ', list(oracle_name2lines.keys()))
+                print('predicted: ', list(name2lines.keys()))
 
         # Sentence Selection
         name2idx = {}
@@ -588,6 +592,7 @@ def collate(
             i += len(lines)
             cat_lines += lines
 
+        # If no articles are returned, assume it's NEI
         sentences, pred_indices = selector.choose_top_n(
             claim, cat_lines, num_sentences, pad=True
         )
