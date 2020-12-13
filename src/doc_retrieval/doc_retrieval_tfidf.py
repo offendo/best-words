@@ -10,43 +10,47 @@ proj_path = os.path.split(os.path.split(os.path.split(os.path.abspath(__file__))
 sys.path.append(proj_path)
 import src.utils.drqa_retriever_utils as utils
 
-train_data = os.path.join('data', 'train.jsonl')
-tfidf_path = os.path.join('data', 'wiki_docs_skimmed-tfidf-ngram=2-hash=16777216-tokenizer=simple.npz')
-ranker = utils.TfidfDocRanker(tfidf_path=tfidf_path)
+TRAIN_PATH = os.path.join('data', 'train.jsonl')
+TFIDF_PATH = os.path.join('data', 'wiki_docs_skimmed-tfidf-ngram=2-hash=16777216-tokenizer=simple.npz')
+ranker = utils.TfidfDocRanker(tfidf_path=TFIDF_PATH)
 
 
-def normalize(prediction_scores):
-    exp = prediction_scores
-    normalized = exp / np.sum(exp)
-    return np.array(normalized > 0.1)
-
-
-def minmaxnormalize(prediction_scores):
+def minmax_normalization(docs, scores, threshold):
+    ''' Uses a MinMaxScaer to range scores of docs between [0,1]. Then retrieves all
+        documents that pass a certain threshold.
+    '''
+    if not threshold:
+        threshold = 0.1
     mms = MinMaxScaler()
-    return mms.fit_transform(prediction_scores.reshape(prediction_scores.shape[0], -1)).reshape(prediction_scores.shape[0],) > 0.4
+    mms_scores =  mms.fit_transform(scores.reshape(scores.shape[0], -1)).reshape(scores.shape[0],)
+    return [doc for doc, score in zip(docs, mms_scores) if score >= threshold]
 
 
-def mms_get_predicted():
-    mms_pred = []
-    for predicted_row in predicted:
-        mms = minmaxnormalize(predicted_row[1][1])
-        mms_docset = set(compress(predicted_row[1][0], mms))
-        mms_pred.append((predicted_row[0], mms_docset))
-    return mms_pred
+def softmax_zscore_normalization(docs, scores, threshold):
+    ''' Uses a softmax to normalize scores. Takes zscores and retrieves all
+        documents that pass a certain threshold.
+    '''
+    if not threshold:
+        threshold = 1
+    exp = np.exp(scores)
+    softmax_normalized = exp / exp.sum()
+    z_scores = zscore(softmax_normalized)
+    return [doc for doc, score in zip(docs, z_scores) if score >= threshold]
 
-def get_docs(claim, k=5, include_scores=False, norm_type=None, zscore_threshold=False):
-    closest_docs, score = ranker.closest_docs(claim, k=k)
-    if zscore_threshold:
-        softmax = np.exp(score) / np.exp(score).sum()
-        scores = zscore(softmax)
-        return [doc for doc, s in zip(closest_docs, scores) if s >= zscore_threshold]
 
-    if include_scores:
-        return claim, set(closest_docs)
+def get_docs(claim, k=5, norm_type='softmax', threshold=None):
+    ''' Retrieves top k documents by some metric. By default, top 10 documents, and softmax normalization.
+    '''
+    closest_docs, scores = ranker.closest_docs(claim, k=k)
+
+    if norm_type == 'softmax':
+        return softmax_zscore_normalization(closest_docs, scores, threshold)
+    if norm_type == 'minmax':
+        return minmax_normalization(closest_docs, scores, threshold)
     return closest_docs
 
 if __name__ == "__main__":
-    with open(train_data, 'r') as fp:
+    with open(TRAIN_PATH, 'r') as fp:
         claims = []
         claims_sets = []
         for jsonl in fp.readlines():
