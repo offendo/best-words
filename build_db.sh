@@ -35,7 +35,7 @@ do
             echo -e "\nBuild source db"
             python3 src/utils/drqa_build_db.py data/wiki-pages/ data/wiki_docs.db
             echo -e "\nBuild skimmed db\n"
-            python3 src/doc-retrieval/document_skimmer.py
+            python3 src/doc_retrieval/document_skimmer.py
             echo -e "\nBuild tfidf for skimmed db\n"
             python3 src/utils/drqa_build_tfidf.py data/wiki_docs_skimmed.db data/
 
