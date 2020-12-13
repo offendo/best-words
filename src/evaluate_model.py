@@ -13,6 +13,7 @@ from doc_retrieval.doc_retrieval_tfidf import get_docs as tfidf_get_docs
 from collections import Counter
 import pandas as pd
 import numpy as np
+import os
 from sklearn.model_selection import train_test_split
 
 # Pytorch
@@ -20,13 +21,16 @@ import torch
 from torch.utils.data import DataLoader
 import torch.optim as optim
 
+WIKI_DOCS_PATH = os.path.join('data', 'wiki_docs_sentence_split.db')
+TRAIN_PATH = os.path.join("data", "train.jsonl")
+BILSTM_MODEL_PATH = os.path.join('')
 torch.multiprocessing.set_start_method("spawn", force=True)
 np.random.seed(123456)
 
 
 def prepare(batch):
     NUM_SENTS = 10
-    RETRIEVER = data.DocRetriever("data/wiki.db", tfidf_get_docs)
+    RETRIEVER = data.DocRetriever(WIKI_DOCS_PATH, tfidf_get_docs)
     # RETRIEVER = data.OracleDocRetriever("data/wiki.db")
     # oracle = data.OracleDocRetriever("data/wiki.db")
     em = Embedder()
@@ -38,7 +42,6 @@ def prepare(batch):
         RETRIEVER,
         SELECTOR,
         oracle_doc_ret=isinstance(RETRIEVER, data.OracleDocRetriever),
-        oracle=oracle,
     )
 
 
@@ -49,7 +52,7 @@ if __name__ == "__main__":
     #                        Setup the datasets/loaders                       #
     ###########################################################################
 
-    train = data.get_train("data/train.jsonl")
+    train = data.get_train(TRAIN_PATH)
     train, test = train_test_split(train)
 
     torch.cuda.empty_cache()
@@ -109,7 +112,7 @@ if __name__ == "__main__":
     model.to(device)
 
     # load the pretrained model
-    state_dict = torch.load("models/bilstm-nli-model-2.pt")
+    state_dict = torch.load("models/bilstm-nli-model-2.pt", map_location=(device))
     model.load_state_dict(state_dict)
 
     # Optimizer & Loss function

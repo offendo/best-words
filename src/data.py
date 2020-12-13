@@ -9,7 +9,7 @@ import re
 import torch
 from torch.utils.data import Dataset
 
-WIKI_PATH = "../data/wiki-pages"
+WIKI_PATH = os.path.join("data", "wiki-pages")
 
 
 def _clean_evidence(row: list):
@@ -528,7 +528,7 @@ class DocRetriever:
             map between article names and contents
         """
 
-        names = self.get_docs(claim, zscore_threshold=0.1)
+        names = self.get_docs(claim, threshold=0.1)
 
         # Fetch all the articles in one query
         articles = self.wiki.get_many(names).fetchall()
