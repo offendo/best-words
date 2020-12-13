@@ -78,8 +78,8 @@ class Trainer:
             # Log the running loss
             progress.set_description(f"Loss: {loss}\tRunning loss: {running_loss}")
             # if self.log_every_n and i % self.log_every_n == 0:
-                # print(f"predictions: {torch.argmax(logits, dim=-1).tolist()}")
-                # print(f"y: {y.view(-1).tolist()}")
+            # print(f"predictions: {torch.argmax(logits, dim=-1).tolist()}")
+            # print(f"y: {y.view(-1).tolist()}")
 
             # Backpropogation
             loss.backward()
@@ -186,14 +186,13 @@ class Trainer:
             fever_score += fev
             label_accuracy += acc
 
-
         # # true/pred sequences
         is_equal = [a == b for a, b in zip(true_sequences, pred_sequences)]
         print(f"Evidence accuracy: {sum(is_equal) / len(is_equal)}")
         print(f"Number correct: {sum(is_equal)} out of {len(is_equal)}")
-        print(f'Fever score: {fever_score / len(is_equal)}')
-        print(f'Number right: {fever_score} out of {len(is_equal)}')
-        print(f'Label accuracy: {label_accuracy / len(is_equal)}')
+        print(f"Fever score: {fever_score / len(is_equal)}")
+        print(f"Number right: {fever_score} out of {len(is_equal)}")
+        print(f"Label accuracy: {label_accuracy / len(is_equal)}")
 
         # print(Counter(non_padding_predictions))
         # print(Counter(non_padding_labels))
@@ -263,9 +262,7 @@ class Trainer:
             valid_running_losses.append(valid_running_loss_hist)
 
 
-
 class FastTrainer:
-
     def __init__(self, model, optimizer, loss_fn, device, log_every_n=None):
         self.model = model
         self.optimizer = optimizer
@@ -279,13 +276,15 @@ class FastTrainer:
         print(f"optimizer: {self.optimizer}")
         print(f"loss_fn: {self.loss_fn}")
 
-    def train(self, loader):
+    def train(self, loader, path):
         """ Run a single epoch of training
 
         Parameters
         ----------
         loader : DataLoader
             DataLoader for a dataset to train
+        path : str
+            Path to location to save model every n batches
 
         Returns
         -------
@@ -324,11 +323,17 @@ class FastTrainer:
             loss_history.append(loss.item())
 
             # Compute a rolling average loss & add to history
-            running_loss = sum(loss_history[-5:]) / 5
+            running_loss = sum(loss_history) / len(loss_history)
             running_loss_history.append(running_loss)
 
             # Log the running loss
             progress.set_description(f"Loss: {loss}\tRunning loss: {running_loss}")
+
+            if self.log_every_n and i % self.log_every_n == 0:
+                torch.save(
+                    self.model.state_dict(),
+                    path
+                )
 
             # Backpropogation
             loss.backward()
@@ -394,25 +399,109 @@ class FastTrainer:
 
                 # softmax to normalize probabilities class
                 probs = torch.softmax(logits, dim=-1)
+                print(probs)
 
                 # get the output class from the probs
                 # also, reshape the prediction back to sentences
                 predictions = torch.argmax(probs, dim=-1).reshape(og_shape[:-1])
 
                 for pred, json in zip(predictions.tolist(), json_list):
+                    print(pred)
                     c = Counter(pred)
                     # most common value, or 1 (NEI) if it's a tie
                     most_common = 2 if c[2] > c[0] else 0 if c[0] > c[2] else 1
-                    json['predicted_label'] = labels[most_common]
-                    json['label'] = labels[json['label']]
+                    json["predicted_label"] = labels[most_common]
+                    json["label"] = labels[json["label"]]
                     jsons.append(json)
 
         # print(f"Evaluation loss: {running_loss}")
         # print("Classification report after epoch:")
         strict_score, label_accuracy, precision, recall, f1 = fever_score(jsons)
-        print(f'Fever score: {strict_score}')
-        print(f'Label accuracy: {label_accuracy}')
-        print(f'Precision: {precision}')
-        print(f'Recall: {recall}')
-        print(f'F1: {f1}')
+        print(f"Fever score: {strict_score}")
+        print(f"Label accuracy: {label_accuracy}")
+        print(f"Precision: {precision}")
+        print(f"Recall: {recall}")
+        print(f"F1: {f1}")
         return loss_history, running_loss_history
+
+    def evaluate_sentence_selection(self, loader, labels):
+        """ Evaluate model on validation data
+
+        Parameters
+        ----------
+        loader : data.DataLoader
+            Data loader class containing validation data
+
+        labels : dict
+            Index to output class
+
+        Returns
+        -------
+        ([float], [float]):
+            Loss history and running loss history
+
+        """
+        jsons = []
+        for i, batch in tqdm(enumerate(loader), total=len(loader)):
+            X, y, json_list = batch
+            for json in json_list:
+                json["predicted_label"] = labels[json["predicted_label"]]
+                json["label"] = labels[json["label"]]
+                jsons.append(json)
+
+        # print(f"Evaluation loss: {running_loss}")
+        # print("Classification report after epoch:")
+        strict_score, label_accuracy, precision, recall, f1 = fever_score(jsons)
+        print(f"Fever score: {strict_score}")
+        print(f"Label accuracy: {label_accuracy}")
+        print(f"Precision: {precision}")
+        print(f"Recall: {recall}")
+        print(f"F1: {f1}")
+        return jsons
+
+    def fit(self, train_loader, valid_loader, labels, path, n_epochs=10):
+        """ Train the model
+
+        Parameters
+        ----------
+        train_loader : DataLoader
+            Class to load training data
+
+        valid_loader : DataLoader
+            Class to load validation data
+
+        labels : dict
+            Dict of index to output classes
+
+        n_epochs : int
+            Number of epochs to run
+
+        Returns
+        -------
+        None
+        """
+        self._print_summary()
+
+        train_losses = []
+        train_running_losses = []
+
+        valid_losses = []
+        valid_running_losses = []
+
+        # start the training
+        for i in range(n_epochs):
+            print(f"Epoch number {i}")
+            # Record the loss from both training and validation
+            loss_hist, running_loss_hist = self.train(train_loader, path)
+
+            valid_loss_hist, valid_running_loss_hist = self.evaluate(
+                valid_loader, labels
+            )
+
+            train_losses.append(loss_hist)
+            train_running_losses.append(running_loss_hist)
+
+            valid_losses.append(valid_loss_hist)
+            valid_running_losses.append(valid_running_loss_hist)
+
+        return train_running_losses, valid_running_losses

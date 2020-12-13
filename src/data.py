@@ -2,16 +2,12 @@ from multiprocessing import Pool
 from tqdm import tqdm
 import sqlite3 as sql
 
-import time
 import pandas as pd
 import os
 import re
-from collections import ChainMap
 
 import torch
-import torch.multiprocessing as mp
 from torch.utils.data import Dataset
-from torch.nn.functional import cosine_similarity
 
 # Local imports
 from doc_retrieval.doc_retrieval_keyword import get_docs
@@ -534,7 +530,7 @@ class DocRetriever:
             map between article names and contents
         """
 
-        names = get_docs(claim)
+        names = get_docs(claim, threshold=80)
 
         # Fetch all the articles in one query
         articles = self.wiki.get_many(names).fetchall()

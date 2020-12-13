@@ -18,7 +18,8 @@ import torch
 from torch.utils.data import DataLoader
 import torch.optim as optim
 
-# torch.multiprocessing.set_start_method("spawn", force=True)
+torch.multiprocessing.set_start_method("spawn", force=True)
+np.random.seed(12345)
 
 
 def prepare(batch):
@@ -54,12 +55,16 @@ if __name__ == "__main__":
     test_dataset = data.TestDataset(test)
 
     train_loader = DataLoader(
-        train_dataset, batch_size=64, shuffle=True, collate_fn=prepare, num_workers=0,
+        train_dataset,
+        batch_size=64,
+        shuffle=True,
+        collate_fn=prepare,
+        num_workers=0,  # doesn't work with more than 1
     )
     test_loader = DataLoader(
         test_dataset,
         batch_size=64,
-        shuffle=True,
+        shuffle=False,
         collate_fn=prepare,
         num_workers=0,  # doesn't work with more than 1 and a sqlite connection
     )
@@ -71,30 +76,38 @@ if __name__ == "__main__":
     # Model params
     EMBEDDING_DIM = em.model.get_sentence_embedding_dimension()
     HIDDEN_DIM = 100
+    HIDDEN_DIMS = [300, 100, 10]
     OUTPUT_DIM = 3  # refute, not enough info, support
     N_LAYERS = 2
     DROPOUT = 1e-1
     BIDIRECTIONAL = True
     # Loss fn params
-    WEIGHT_DECAY = 1e-4
+    WEIGHT_DECAY = 1e-2
     N_EPOCHS = 3
-    LR = 1e-3
+    LR = 1e-2
     LR_DECAY = 1e-3
 
-    model = lstm.LSTMClassifier(
+    # model = lstm.LSTMClassifier(
+    #     embedding_dim=EMBEDDING_DIM,
+    #     hidden_dim=HIDDEN_DIM,
+    #     output_dim=OUTPUT_DIM,
+    #     n_layers=N_LAYERS,
+    #     dropout=DROPOUT,
+    #     bidirectional=BIDIRECTIONAL,
+    #     pad_idx=train_dataset.input_pad_idx,
+    # )
+    model = mlp.MLPClassifier(
         embedding_dim=EMBEDDING_DIM,
-        hidden_dim=HIDDEN_DIM,
+        hidden_dims=HIDDEN_DIMS,
         output_dim=OUTPUT_DIM,
-        n_layers=N_LAYERS,
         dropout=DROPOUT,
-        bidirectional=BIDIRECTIONAL,
         pad_idx=train_dataset.input_pad_idx,
     )
     model.to(device)
 
     # load the pretrained model
-    state_dict = torch.load("../models/bilstm-nli-model-2.pt")
-    model.load_state_dict(state_dict)
+    # state_dict = torch.load("../models/mlp-intermediate.pt")
+    # model.load_state_dict(state_dict)
 
     # Optimizer & Loss function
     optimizer = optim.Adam(model.parameters(), weight_decay=WEIGHT_DECAY, lr=LR)
@@ -106,12 +119,33 @@ if __name__ == "__main__":
     trainer = FastTrainer(model, optimizer, loss_fn, device, log_every_n=1)
     labels = {0: "REFUTES", 1: "NOT ENOUGH INFO", 2: "SUPPORT"}
 
-    small_test_dataset = data.TestDataset(test.sample(1000))
+    model.share_memory()
+    small_train_dataset = data.FastDataset(train.sample(10000))
+    small_train_loader = DataLoader(
+        train_dataset,
+        batch_size=64,
+        shuffle=False,
+        collate_fn=prepare,
+        num_workers=2,  # doesn't work with more than 1
+        prefetch_factor=2,
+    )
+    small_test_dataset = data.TestDataset(test.sample(20))
     small_test_loader = DataLoader(
         small_test_dataset,
-        batch_size=64,
+        batch_size=8,
         shuffle=False,
         collate_fn=prepare,
         num_workers=0,  # doesn't work with more than 0
     )
-    trainer.evaluate(small_test_loader, labels)
+    # trainer.evaluate(small_test_loader, labels)
+    trainer.fit(
+        small_train_loader,
+        small_test_loader,
+        labels,
+        "/home/offendo/Documents/masters/nlp243/best-words/models/mlp-intermediate.pt",
+    )
+
+    torch.save(
+        model.state_dict(),
+        "/home/offendo/Documents/masters/nlp243/best-words/models/mlp-final.pt",
+    )

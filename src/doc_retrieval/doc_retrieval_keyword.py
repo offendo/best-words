@@ -49,7 +49,7 @@ def _rank(claim_docs):
     return filtered_docs
 
 
-def get_docs(claim: str):
+def get_docs(claim: str, threshold: int = 50):
     """
     Simple key_word matching, where we look at the claim and doc title (doc id) and doing
     fuzz partial ratio matching to filter docs, and return the top 5 ranked documents.
@@ -66,11 +66,11 @@ def get_docs(claim: str):
     for doc_id in ids:
         title = _clean_text(doc_id)
         similarity = fuzz.partial_ratio(compare_claim, title)
-        if similarity > 50:  # tunable parameter, depends on how high recall should be in this stage
+        if similarity >= threshold:  # tunable parameter, depends on how high recall should be in this stage
             docs.append(doc_id)
-    top_five_docs = _rank((claim, docs))
-    return top_five_docs
-
+    # top_five_docs = _rank((claim, docs))
+    # return top_five_docs
+    return docs
 
 if __name__ == "__main__":
     claim = "Peggy Sue Got Married is a Egyptian film released in 1986."

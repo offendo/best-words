@@ -18,8 +18,8 @@ class MLPClassifier(nn.Module):
 
         # linear layers
         self.fc1 = nn.Linear(1 + embedding_dim * 2, hidden_dims[0])
-        self.fc2 = nn.Linear(hidden_dims[0], output_dim)
-        # self.fc3 = nn.Linear(hidden_dims[1], output_dim)
+        self.fc2 = nn.Linear(hidden_dims[0], hidden_dims[1])
+        self.fc3 = nn.Linear(hidden_dims[1], output_dim)
 
         # ReLU as activation function
         self.activation = nn.ReLU()
@@ -45,7 +45,7 @@ class MLPClassifier(nn.Module):
         # X = X.view(-1, X.shape[-1])
 
         out = self.activation(self.fc1(self.dropout(X)))
-        out = self.fc2(self.dropout(out))
-#         out = self.fc3(self.dropout(out))
+        out = self.activation(self.fc2(self.dropout(out)))
+        out = self.fc3(self.dropout(out))
 
         return out
