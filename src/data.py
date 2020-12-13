@@ -9,9 +9,6 @@ import re
 import torch
 from torch.utils.data import Dataset
 
-# Local imports
-from doc_retrieval.doc_retrieval_keyword import get_docs
-
 WIKI_PATH = "../data/wiki-pages"
 
 
@@ -509,9 +506,10 @@ class DocRetriever:
     to whatever you wish!
     """
 
-    def __init__(self, wiki_path):
+    def __init__(self, wiki_path, get_docs):
         self.wiki = WikiDatabase(wiki_path)
         self.connect_to_db()
+        self.get_docs = get_docs
 
     def connect_to_db(self):
         self.wiki.connect()
@@ -530,7 +528,7 @@ class DocRetriever:
             map between article names and contents
         """
 
-        names = get_docs(claim, threshold=80)
+        names = self.get_docs(claim, threshold=80)
 
         # Fetch all the articles in one query
         articles = self.wiki.get_many(names).fetchall()

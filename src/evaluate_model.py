@@ -6,6 +6,7 @@ from nli.selector import Selector, Embedder
 import nli.lstm as lstm
 import nli.mlp as mlp
 from nli.trainer import FastTrainer
+from doc_retrieval.doc_retrieval_similarity import get_docs
 
 # Utilities
 from collections import Counter
@@ -24,8 +25,8 @@ np.random.seed(12345)
 
 def prepare(batch):
     NUM_SENTS = 5
-    # RETRIEVER = data.DocRetriever("../data/wiki.db")
-    RETRIEVER = data.OracleDocRetriever("../data/wiki.db")
+    RETRIEVER = data.DocRetriever("../data/wiki.db", get_docs)
+    # RETRIEVER = data.OracleDocRetriever("../data/wiki.db")
     em = Embedder()
     sel = Selector(em)
     SELECTOR = sel
