@@ -4,18 +4,25 @@
 %% Based on the style files for ACL 2020, which were
 %% Based on the style files for ACL 2018, NAACL 2018/19, which were
 %% Based on the style files for ACL-2015, with some improvements
-%%  taken from the NAACL-2016 style
+%% taken from the NAACL-2016 style
 %% Based on the style files for ACL-2014, which were, in turn,
 %% based on ACL-2013, ACL-2012, ACL-2011, ACL-2010, ACL-IJCNLP-2009,
 %% EACL-2009, IJCNLP-2008...
 %% Based on the style files for EACL 2006 by
-%%e.agirre@ehu.es or Sergi.Balari@uab.es
+%% e.agirre@ehu.es or Sergi.Balari@uab.es
 %% and that of ACL 08 by Joakim Nivre and Noah Smith
 
 \documentclass[11pt,a4paper]{article}
 \usepackage[hyperref]{acl2020}
 \usepackage{times}
 \usepackage{latexsym}
+\usepackage{framed}
+\usepackage{csquotes}
+\usepackage{parskip}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage{float}
 \renewcommand{\UrlFont}{\ttfamily\small}
 
 % This is not strictly necessary, and may be commented out,
@@ -23,10 +30,10 @@
 % and will typically save some space.
 \usepackage{microtype}
 
-\aclfinalcopy% Uncomment this line for the final submission
-%\def\aclpaperid{***} %  Enter the acl Paper ID here
+\aclfinalcopy % Uncomment this line for the final submission
+% \def\aclpaperid{***} %  Enter the acl Paper ID here
 
-%\setlength\titlebox{5cm}
+% \setlength\titlebox{5cm}
 % You can expand the titlebox if you need extra space
 % to show all the authors. Please do not make the titlebox
 % smaller than 5cm (the original size); we will check this
@@ -34,76 +41,309 @@
 
 \newcommand\BibTeX{B\textsc{ib}\TeX}
 
-\title{Do you \textit{Really} Have the Best Words}
+\title{Claim Verification: Do You \textit{Really} Have the Best Words?
 
-\author{Kaleen Shrestha \\
-  UC Santa Cruz\\
-  \texttt{nilay@ucsc.edu} \\\And%
+  % I think we should keep fake news or something similar in the title, since that's basically what the field is called now
+
+
+  NLP 243 - Final Project}
+
+\author{Alex Lue \\
+  \texttt{alue@ucsc.edu} \\\And
   Nilay Patel \\
-  UC Santa Cruz\\
-  \texttt{nilay@ucsc.edu} \\\And%
-  Alex Lue \\
-  UC Santa Cruz\\
-  \texttt{alue@ucsc.edu} \\
-}
+  \texttt{nilay@ucsc.edu} \\\And
+  Kaleen Shrestha \\
+  \texttt{kashrest@ucsc.edu}\\}
 
 \date{}
 
 \begin{document}
 \maketitle
-\begin{abstract}
-  This is the abstract. We can add it here if necessary.
-\end{abstract}
+% \begin{abstract}
+%   \textbf{TODO}
+%   Here is where we include Abstract (if necessary)
+% \end{abstract}
+\section{Introduction}
+One of the most divisive socio-political topics of discourse lately has been the credibility of main stream news outlets and media biases. Whether it is to conflate two ideas and create false equivalencies, or to broadcast unsupported "facts", the news we all consume can be questionable, regardless of political biases.
 
-\section{Sentence Selection}%
-\label{sec:sentence-selection}
+Fact checking is a difficult task to do due to lack of data and that it is a largely manual process. However there are lots of ways researchers are developing tools to help the process become more automated.
+
+Automating the verification of claims would involve different tasks. One of which is to search for relevant articles on the claim. Once we have potential evidence, there is the task of figuring out what the articles have to say about the claim. This is stance detection. Common click bait titles used for news articles to reel in readers often have misleading titles that may have little, if none at all, to do with the title of the article. Stance detection is provided as an automated tool for fact checkers to quickly determine whether a title is related to the body of text, and such, help categorize claims more efficiently. Grouping evidence based on their stance can aid with ultimately labeling the veracity of the claim.
+
+\section{Tasks}
+Our task consists of labeling a claim (text) as supported, refuted, or having not enough info to determine veracity given the evidence that is found in Wikipedia articles. This is done by verifying the claim with evidence found in the Wikipedia corpus in the Fact Extraction and VERification (FEVER) 1.0 data set \cite{fever2018}. To achieve this task, there would be three main sub problems that would need to be solved: document retrieval, sentence selection, and stance detection.
+
+\subsection{Document Retrieval}
+The relevant Wikipedia articles are selected in this task. There has been work on a variety of approaches to document retrieval that looked for words from the claim in the titles of Wikipedia stubs, and further narrowed down the number of candidate articles by looking for most matching tokens with the claims and other features that would need to be investigated \cite{ucl2018}. More advanced methods to look beyond token matching and instead for semantic similarity using neural networks can also be explored as done in \cite{unc2018}.
+
+\subsection{Sentence Selection}
+From the articles chosen from the previous step, the sentences that would most likely provide evidence for or against the claim are selected.
+
+\subsection{Natural Language Inference}
+From the selected sentences, we would determine the relationship of each sentence with the claim. So a sentence can support/refute the claim or cannot support or refute the claim on its own. This task falls under Natural Language Inference, and so similar models can be explored to get semantic relationship information and utilize better text embeddings \cite{ucl2018}. The evidence sentences can also be concatenated to perform inference on the claim \cite{unc2018}
+
+These approaches assume the provided Wikipedia stubs in the FEVER 1.0 data set has reliable information, which may not always be the case. However, a successful model trained on incorrect (but consistent) data will most likely be just as effective when trained on accurate data.
+
+According to the FEVER 1.0 shared task, a prediction is only correct if the label is correct and the evidence sentences is equal to one of the correct supporting evidence sentences sets (each with at most 5 sentences) is presented (FEVER score).
+
+
+\section{Data}
+
+The FEVER data set provides labeled claims along with tagged evidence to support or refute the claim (if such evidence exists). Figure~\ref{fig:fever-example} shows an example claim and its corresponding veracity, label, and evidence.
+
+Overall, the FEVER data set contains 145,449 items. Of those,  $\sim$75\% are \textsc{Verifiable} and $\sim$25\% are \textsc{Not Enough Info} entries. The verifiable 75\% is split into $\sim$55\% \textsc{Supports} and $\sim$20\% \textsc{Refutes}. Likewise, it provides 5 million excerpts from Wikipedia articles to use as evidence. The excerpts have also been pre-processed and split into indexed lines (this is what the evidence line number corresponds to).
+
+
+\begin{figure}
+  \begin{framed}
+    \box{
+      \textbf{Claim:} Nikolaj Coster-Waldau worked with the Fox Broadcasting Company.
+
+      \textbf{Verifiable:} \textsc{Verifiable}
+
+      \textbf{Label:} \textsc{Supports}
+
+      \textbf{Evidence:}
+
+      \texttt{[Nikolaj\_Coster-Waldau, 7]}
+      \begin{displayquote}
+        ``He then played Detective John Amsterdam in the short-lived Fox television series New
+        Amsterdam\ldots''
+      \end{displayquote}
+
+      \texttt{[Fox\_Broadcasting\_Company, 0]}
+      \begin{displayquote}
+        ``The Fox Broadcasting Company -LRB- often shortened to Fox and stylized as FOX \ldots''
+      \end{displayquote}
+    }
+  \end{framed}
+  \caption{An example from FEVER and the associated Wikipedia text from \texttt{[article, line]}
+    in the Evidence field.}
+  \label{fig:fever-example}
+\end{figure}
+
+
+\section{Previous Work}
+The winning team for the FEVER shared task 2018 was UNC-NLP research team \cite{unc2018}. In their report, they discussed a model called the \textit{Neural Semantic Matching Network (NSMN)} as shown in figure \ref{fig:NSMN}. The NSMN is composed of four layers: the encoding layer, which is a BiLSTM to encode the inputs, the alignment layer, which aligns the input sequences, the matching layer, which is a BiLSTM to perform semantic matching, and the final output layer, which computes the final output. The team was then able to adapt this semantic relation-capturing model into each subtask of the problem.
+
+\begin{figure}
+  \includegraphics[scale=0.45]{pics/NSMN_Fever.png}
+  \caption{\small \sl This figure shows the UNC-NLP team's pipeline using their Neural Semantic Matching Network (NSMN) \label{fig:NSMN}}
+\end{figure}
+
+\section{Approach and Methodology}
+
+\subsection{Document Corpus Preprocessing}
+Given with the FEVER dataset are a set of Wikipedia document articles. Each article contains a text id and the body of the article. This document set contains about 5,416,428 documents in the original corpus. Due to the size of this set and the need to read the documents for TF-IDF, key matching, and sentence embeddings for document retrieval, we decided to use a reduced document set for this project. To create this set, we gathered all the essential documents that are referenced as evidence in the training data, and for every evidence gathered, we could add $n$ extra randomized documents from the source corpus to add to our skimmed set. For this project, we used a total set of 125,228 documents.
+
+With this reduction of documents in our corpus, this will allow us to train and evaluate far quicker than using the original document corpus while still allowing for some variety of extraneous documents. Some important key measurements that we were aware of is that due to the smaller document size, we may receive better accuracy metrics due to less document variance.
+
+Additionally, the document corpus is given as a set of jsonl files, each containing 10,000 claims documents. In order to make fast retrievals for both both document retrieval and sentence selection, the best way is to convert these document jsons into a sqlite database to then query. Since all files will be loaded into a database, we do not need to search a directory to open a file every single time we need to retrieve documents. Once we create source document database, we can use it to process the skimmed corpus described above.
+
+\subsection{Document Retrieval}
+We experimented with two main approaches to measure the similarity of a document to a claim: term frequency-inverse document frequency vectorization and keyword approximate text matching with sentence embeddings.
+
+The first approach we went with was a term frequency-inverse document frequency (TF-IDF) vectorization. Using this approach, we are to create a TF-IDF vector from the document corpus. We can then use the TF-IDF vector to compare the cosine similarity of each claim to every document, and then and then retrieve a certain number of documents by some constraint. To aide our experiments, we utilized modules from Facebook's DrQA \cite{chen2017reading}. DrQA is machine reading at scale (MRS) pipeline, which is designed for open domain question and answering on large unstructured corpora of documents. Being the case, used their TF-IDF builder to help produce the needed matrix to compute similarity between documents and claims.
+
+For our experiments we wanted to test whether different retrieval metrics would perform better or worse than other measurements. The first method was to first retrieve using the top $k$ documents. This would be the calculation of cosine similarity between a claim and the document TF-IDF and return the top k documents. This was done for values of $k=5,10,15$. We observed that the recall of the top 5 documents was $0.65$, with diminishing returns as we increased the retrieval set (only an additional 5\% when increased to the top 15 documents). Next, we compared different normalization techniques, including min-max scaler and softmax. For min-max scaling, we used Scikit-learn's `MinMaxScaler` to normalize values of the ranked documents into a range between 0 and 1. From that we used a threshold of 0.1 collect the documents that have a normalized score greater than this threshold. We also experimented with calcluating the softmax of the scores of each document and retrieved documents based off a z-score threshold. Because similarity scores can vary independent of a range, the normalization of these values should help in producing a threshold for which we can choose to retrieve documents.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{ll}
+    \toprule
+    \begin{tabular}[c]{@{}l@{}}TF-IDF\\ candidate document \\ filtering\end{tabular} & Recall  \\ % \hline
+    \midrule%
+    Top 5                                                                            & 65.43\% \\ % \hline
+    Top 10                                                                           & 69.27\% \\ % \hline
+    Top 15                                                                           & 70.93\% \\ % \hline
+    \bottomrule
+  \end{tabular}
+  \caption{These are the experiments for TF-IDF vector cosine similarity, ranking documents based on cosine similarity with the claim.}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{ll}
+    \toprule
+    Filtering method                                                 & Recall  \\ % \hline
+    \midrule
+    Softmax, z-score                                                 & 43.44\% \\ % \hline
+    \begin{tabular}[c]{@{}l@{}}Min-max \\ normalization\end{tabular} & 62.04\% \\ % \hline
+    \bottomrule
+  \end{tabular}
+  \caption{To decrease the number of irrelevant documents being retrieved, a second filtering method was used. The rational was that many claims had only one necessary document, and even returning five (the upper limit in the training set) would confuse the sentence selector model.}
+\end{table}
+
+The second approach was to explore keywords and claim-document similarity. Many of the papers submitted to the FEVER competition preformed a keyword matching heuristic to filter out relevant documents. After some exploration of the dataset, it was obvious that a majority of claims shared keywords with their (correct) evidence documents in the document title itself. And for the claims that did not share keywords with the document titles, the keyword usually showed up within the first 1-3 lines. Set comparison experiments (where text was split on whitespace and stop words were removed to produce keywords) showed that on average 98\% of the claims in the train set have matching keywords from the claim with at least one complete evidence set.
+
+On this basis, the final implementation used approximate text matching using the RapidFuzz python library and the fuzz.partial\_ratio function to do a preliminary filter on all the documents in the given Wikipedia database to extract candidate documents in hopes to capture this keyword similarity property. See Table ~\ref{tab:partialratioexperiment} After some experimentation with ranking these candidate documents, these documents were ranked using sentence embeddings. The final model that produced this embeddings was the language-agnostic BERT sentence embeddings (LaBSE) which was a BERT model that was finetuned on a translation ranking task \cite{feng2020languageagnostic}. Another model more suited for this task, trained on MSMARCO passage ranking (which was similar to this task) was also used, however there was not conclusive improvement compared to LaBSE. With more testing, this model would most likely preform better than LaBSE in terms of recall. The document title was concatenated with the first line of the document, and the encoded text was compared with the encoded claim text using cosine similarity, and the five documents with the top cosine similarity scores were returned. See Table ~\ref{tab:filterrankexperiment} for results.
+
+\begin{table*}[h]
+  % \resizebox{\columnwidth}
+  \centering
+  \begin{tabular}{lll}
+    \toprule
+    \multirow{2}{*}{Threshold for partial ratio} & Recall                                                                                         & Number of candidate docs                                                                            \\ \cline{2-3}
+                                                 & \begin{tabular}[c]{@{}l@{}}Averaged over\\ random sample of \\ 20\% of train data\end{tabular} & \begin{tabular}[c]{@{}l@{}}Averaged over 10 random \\ samples of 0.1\% of train\\ data\end{tabular} \\ %\hline
+    \midrule
+    50                                           & 94.57\%                                                                                        & 2000                                                                                                \\
+    75                                           & 83.84\%                                                                                        & 23                                                                                                  \\
+    90                                           & 80.53\%                                                                                        & 4                                                                                                   \\
+    \bottomrule
+  \end{tabular}
+  \label{tab:partialratioexperiment}
+  \caption{This is the ablation study for the first filter to get candidate documents using approximate text matching of the claim and document ID. The final choice was 75, in order to balance recall with the number of candidate documents to process in ranking stage.}
+\end{table*}
+
+\begin{table*}[h]
+  \centering
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    Method                                                                                                                                                                       & Recall  \\ \midrule
+    \begin{tabular}[c]{@{}l@{}}1. Partial ratios (claim + title) threshold \textgreater 50\\ 2. Top 5 docs partial ratios (doc title)\end{tabular}                               & 72.45\% \\
+    \begin{tabular}[c]{@{}l@{}}1. Partial ratios (claim + title) threshold \textgreater 75\\ 2. Top 5 docs cosine similarity (LaBSE) (doc title + first sentence)\end{tabular}   & 84.10\% \\
+    \begin{tabular}[c]{@{}l@{}}1. Partial ratios (claim + title) threshold \textgreater 75\\ 2. Top 5 docs cosine similarity (LaBSE) (doc title)\end{tabular}                    & 83.80\%  \\
+    \begin{tabular}[c]{@{}l@{}}1. Partial ratios (claim + title) threshold \textgreater 75\\ 2. Top 5 docs cosine similarity (MSMARCO) (doc title + first sentence)\end{tabular} & 88.20\%  \\ \bottomrule
+  \end{tabular}
+  \label{tab:filterrankexperiment}
+  \caption{These are the experiments for the final filtering and ranking methods. When dealing with computationally heavy methods (like including the first line of a document), having less documents returned from the filtering part was necessary, hence the threshold increased from 50 to 75. Also, the first row results were averaged from 4 iterations of a random 100 samples, the second were averaged from 5 iterations, the third were averaged from 10 iterations, and the last was averaged from 1 iteration. All used the same random seed. The final row was obviously not representative, and for future work, more iterations would be needed. The final method was the second row.}
+\end{table*}
+
+\subsection{Sentence Selection}
 
 The second task in the pipeline is sentence selection, in which we choose a
 subset of salient sentences from the retrieved articles. It is possible to
 remove this step entirely, instead assuming all sentences have a non-zero
-probability of saliency and letting the next item in the pipeline distinguish.
+probability of being salient and letting the next item in the pipeline distinguish.
 However, the baseline approach \cite{fever2018}, despite the imperfect recall,
 improved overall performance when limiting the number of selected sentences.
 
-\subsection{Previous Work}%
+\subsubsection{Previous Work}%
 \label{subsec:sentence-selection-prev-work}
 
 The baseline approach used bi-gram TF-IDF vectors for the claim and each target
 vector, as well as their cosine similarity, and ranked the top-$k$ sentences. At
-$k=5$ and $l=5$ documents, they achieve 55.3\% recall for verifiable claims.
+$k=5$ and $l=5$ documents, they achieve 55.3\% recall for verifiable claims,
+indicating a maximum possible fever score (assuming perfect NLI) of 62.81\%
+(including NEI claims).
 
-\subsubsection{name}%
-\label{subsubsec:label}
+The winning team \cite{unc2018} tested their Neural Semantic Matching Network
+against several approaches, including TF-IDF, max-pool with sentence encodings,
+and the FEVER baseline. Overall, it outperformed every approach by a significant
+margin, achieving 86.79\% recall (a theoretical maximum of 91.19\% FEVER). While
+this team's approach achieves state-of-the-art performance, we do not have the
+resources to train and evaluate a similar model to the same extent, and thus
+can't improve upon it.
 
-
-
-\subsection{Approach}%
+\subsubsection{Approach}%
 \label{subsec:sentence-selection-approach}
 
+Instead, we use sentence-bert (SBERT) sentence embeddings between a claim and
+target, and rank potential targets sentences by cosine similarity to the claim.
+Specifically, we use the \texttt{sentence-transformers}\cite{sbert} Python
+library, an implementation of SBERT, using the
+\texttt{distilroberta-base-msmarco-v2} model. We test both selecting top 5 and
+top 10 sentences, as well as selecting all sentences (i.e., removing this
+component entirely).
 
+\subsection{Natural Language Inference}
 
-\section{Natural Language Inference}%
-\label{sec:nli}
+The final task in the pipeline is natural language inference (NLI), in which we determine
+whether a selected sentence supports, refutes, or is irrelevant to the claim.
 
-\subsection{Previous Work}%
+\subsubsection{Previous Work}%
 \label{subsec:nli-prev-work}
 
-The winning team from the first FEVER task workshop UNC-NLP \citep{unc2018}
-developed the \textbf{Neural Semantic Matching Network}, a four layer model
+The winning team's \textbf{Neural Semantic Matching Network}, a four layer model
 \footnotemark which performs semantic matching between two textual sequences.
-Importantly, the team used no intermediate representation prior to training the
-model, instead using a BiLSTM as an encoding layer.
+Importantly, the team does not use pretrained word-embeddings for this model,
+and instead uses their own Bi-LSTM as an encoding layer.
 
 \footnotetext{The four layers are the encoding layer, alignment layer, matching
-layer, and output layer}
+  layer, and output layer}
 
-\subsection{Approach}%
+\subsubsection{Approach}%
 \label{subsec:nli-approach}
 
-We use
+Our textual entailment model is a Bi-LSTM fed into a single fully-connected
+layer. The model accepts the concatenation of the claim and target embeddings and
+their cosine similarity as input, and outputs a label for each target sentence.
+To calculate the overall label, we use the most commonly occurring label out of
+\textsc{Support} and \textsc{Refute}, or, in the case of a tie, \textsc{Not
+  Enough Info}. We also test the performance of a multilayer perceptron with the
+same parameters, but due to restrictions in training resources, only have a
+partially trained model.
 
+\subsubsection{Training}
+\label{subsec:nli-training}
+
+To train this model, we first split the data into training and testing datasets.
+In the training data, we remove the claims marked as \textsc{Not Enough Info},
+as no articles are provided as evidence for those\footnotemark. Then, each
+sentence in the article was labeled with the overall label if it was part of an
+evidence set, or NEI otherwise.
+
+Both the LSTM and MLP models are trained using cross-entropy loss and the Adam optimizer\cite{adam}
+for 3 epochs\footnotemark, and evaluated using \texttt{fever-scorer}\footnotemark. We found difficulty in convergence despite significant testing of hyperparameters. After the first 20 iterations of training, the loss had trouble converging and began oscillating seemingly randomly.
+
+\footnotetext{\linkhttps{https://github.com/sheffieldnlp/fever-scorer}}
+
+\section{Evaluation}
+
+Evaluation will be done in several ways. Due to the skew in the class probabilities, accuracy alone is not the most effective metric as it gives too much of a bias towards verifiable claims. Similarly, predicting the correct class is only part of the task---finding the appropriate evidence is arguably more important. The FEVER shared task used two metrics:
+\begin{enumerate}
+  \item Evidence F-1 score
+  \item FEVER score (accuracy of evidence AND label)
+\end{enumerate}
+In this project, we used these two metrics to evaluate our full pipeline. However to achieve a greater depth to our experimenting, we also tested individual performance of the subtasks for document retrieval and natural language inference. For document retrieving, we approached evaluation to be achieving high recall, with a low number of documents. This ensures that we collect the most relevant documents with the fewest number retrieved.
+
+
+\section{Results}
+\begin{table*}[h]
+  \centering
+  \begin{tabular}{lllll}
+    \toprule
+    Model  & Doc. Retrieval & Sent. Selection & FEVER & Label acc. \\
+    \midrule
+    BiLSTM & TF-IDF, z-score $> 0.3$ & top 5 & 0.26 & 0.49 \\
+    BiLSTM & TF-IDF, z-score $> 0.3$ & top 10 & \textbf{0.28} & \textbf{0.48} \\
+    BiLSTM & Oracle & top 5 & 0.42 & 0.55 \\
+    MLP & TF-IDF, z-score $> 0.3$ & top 5 & 0.06 & 0.40 \\
+    MLP (baseline) & (baseline) & (baseline) & 0.19 & 0.40 \\
+    DA (baseline) & (baseline) & (baseline) & \textbf{0.33} & \textbf{0.53} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Full pipeline and NLI results using various setups. Excluding the oracle, the best approach was using top 10 sentence. We outperform the baseline's MLP, but are beaten by the Decomposable Attention model \cite{parikh2016decomposable}}
+  \label{tab:full-pipeline}
+\end{table*}
+
+
+Testing on a random subset of 1000 claims, our best full pipeline (TF-IDF document retrieval,
+$k=5$ top sentences, and the Bi-LSTM with SBERT embeddings) gave a FEVER score of 0.28.
+Using the same setup with an oracle document retriever, we achieve between 0.40 FEVER on the same sample. Despite other retrieval methods having a significantly higher recall, the sentence selector module was not robust enough to handle the extra noise from a lower precision.
+
+Similarly, The BiLSTM NLI model had better label accuracy without a sentence selector, but the FEVER score suffered due to its inability to select the correct evidence set. The MLP model underperformed in all tests, likely due to its incomplete training.
+
+\section{Future work}
+
+Despite having adequate performing models in each subtask, our full pipeline wasn't able to delivery with the same accuracy. One suspected cause is the inability for the sentence selection to deal with noise. Our proposed solution to this was to use a model similar to the NSMN, using the following steps.
+\begin{enumerate}
+        \setlength{\itemsep}{0pt}
+        \setlength{\parskip}{0pt}
+  \item \textbf{Encoding} We use word embeddings to encode each the claim and each sentence in the retrieved articles.
+  \item \textbf{Alignment} Given input claim $\mathbf{U}\in R^{n \times d}$ and target sentence $\mathbf{V} \in R^{m \times d}$, calculate the alignment matrix $\mathbf{W=UV^{T}} \in R^{n \times m}$.
+  \item \textbf{Scoring} Calculate a column-wise softmax of $\mathbf{W}$, then column-wise max, and finally a sum of the resulting vector. This score is similar to a cosine similarity, but instead sums, for each word in a claim, the most similar word in a target sentence.
+  \item \textbf{Selection} We then select the $k$ target matrices with the highest score as calculated above, and feed the them into a convolutional neural network to perform textual entailment classification.
+\end{enumerate}
+
+Our intuition was that this method of scoring sentences takes into account more information in a sentence, and thus may do a better job at distinguishing saliency\footnote{The code for this implementation is written but untested.}.
+
+\section{Individual contributions}
+
+This project was highly collaborative, with each person contributing significantly to each other's parts. In general, Alex and Kaleen worked on document retrieval, and Nilay trained the NLI model and the sentence selector. When it came to connecting the full pipeline together, we all collaborated to evaluate tests with different approaches.
 
 \bibliography{report}
 \bibliographystyle{acl_natbib}
+
 
 \end{document}
