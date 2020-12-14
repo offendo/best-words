@@ -2,6 +2,12 @@ import json
 import itertools
 import sqlite3
 import os
+import sys
+from tqdm import tqdm
+
+proj_path = os.path.split(os.path.split(os.path.split(os.path.abspath(__file__))[0])[0])[0]
+sys.path.append(proj_path)
+import src.data as data
 
 data_dir = os.path.join('data')
 db_file = os.path.join(data_dir, 'wiki_docs_skimmed.db')
@@ -39,7 +45,7 @@ def db_insert_rows(db_filepath, rows):
 
 
 if __name__ == "__main__":
-    n_extra = int (input('Enter # extra documents per claim evidence (def: 9): ') or '9')
+    n_extra = 9
 
     all_articles = set()
     with open(train_jsonl, 'r') as fp:

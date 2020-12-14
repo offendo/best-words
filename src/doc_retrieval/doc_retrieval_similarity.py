@@ -1,19 +1,15 @@
 from sentence_transformers import SentenceTransformer
-
 from sklearn.metrics.pairwise import cosine_similarity
-
 import pickle
-
 import re
-
 from rapidfuzz import fuzz
-
 from pathlib import Path
-
 import sqlite3
-
 import unicodedata
+import os
 
+DB_PATH = os.path.join("data", "wiki_docs_skimmed.db")
+WIKI_IDS_PATH = os.path.join("data", "wiki_doc_skimmed_ids.obj")
 
 class DocDB(object):
     """Sqlite backed document storage.
@@ -128,7 +124,7 @@ def _rank(claim_docs):
     # this second model looks better suited for task, but not enough testing to conclude that it is better than LaBSE
     #model = SentenceTransformer('distilroberta-base-msmarco-v2')
 
-    db = DocDB(Path(__file__).parent / "../../project_data/wiki_docs_skimmed.db")
+    db = DocDB(DB_PATH)
     claim, retrieved_docs = claim_docs
     sentences = [_clean_text_similarity(claim)]
 
@@ -159,7 +155,7 @@ def get_docs(claim: str):
     :return docs: list
                   doc ids of the top 5 documents that matched with claim
     """
-    with open(Path(__file__).parent / "../../data/wiki_doc_skimmed_ids.obj", "rb") as file:
+    with open(WIKI_IDS_PATH, "rb") as file:
         ids = pickle.load(file)
     docs = []
     compare_claim = _clean_text(claim)

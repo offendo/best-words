@@ -49,6 +49,21 @@ def get_docs(claim, k=5, norm_type='softmax', threshold=None):
         return minmax_normalization(closest_docs, scores, threshold)
     return closest_docs
 
+
+def evaluate_retrieval(claims, predicted):
+    recalls = np.array([])
+    for (_, _, gold_groups), pred in zip(claims, predicted):
+        best_recall = None
+        for gold in gold_groups:
+            p = len(gold)
+            tp = len(gold & pred)
+            local_recall = tp/p
+            if best_recall is None or local_recall > best_recall:
+                best_recall = local_recall
+        recalls = np.append(recalls, best_recall)
+    return np.average(recalls)
+
+
 if __name__ == "__main__":
     with open(TRAIN_PATH, 'r') as fp:
         claims = []
@@ -71,18 +86,4 @@ if __name__ == "__main__":
     for claim, _, _ in claims:
         predicted.append(set(get_docs(claim, k=5)))
 
-    
-    # predicted = mms_get_predicted()
-    
-    recalls = np.array([])
-    for (_, _, gold_groups), pred in zip(claims, predicted):
-        best_recall = None
-        for gold in gold_groups:
-            p = len(gold)
-            tp = len(gold & pred)
-            local_recall = tp/p
-            if best_recall is None or local_recall > best_recall:
-                best_recall = local_recall
-        recalls = np.append(recalls, best_recall)
-
-    print('AVG Recall of tf-idf: {}%'.format(round(100 * np.average(recalls), 2)))
+    print('AVG Recall of tf-idf: {}%'.format(round(100 * evaluate_retrieval(claims, predicted), 2)))
