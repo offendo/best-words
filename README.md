@@ -5,8 +5,8 @@ Final project for NLP 243 with Nilay, Alex, and Kaleen
 In the `best-words/` directory:
  1. run `pip install -r requirements.txt`
  2. run `./build_db.sh`
-	 i. choose whether to build from zip files in project, or build from data source
+ 	1. choose whether to build from zip files in project, or build from data source
 
 
 ## Run Pipeline
-To run the pipeline: `python src/evaluate_model.py`
+To run the full pipeline: `python src/evaluate_model.py`
