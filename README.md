@@ -1,5 +1,5 @@
 # best-words
-Final project for NLP 243 with Alex and Kaleen 
+Final project for NLP 243 with Nilay, Alex, and Kaleen 
 
 ## Setup
 In the `best-words/` directory:
